@@ -1,6 +1,7 @@
 "use strict";
 // EvoSim — frontend. Visualizador 3D próprio (Canvas 2D), zero dependências.
 
+const PALETA = ["#58a6ff", "#f0883e", "#2ea043", "#db61a2", "#e3b341", "#a371f7"];
 const $ = (id) => document.getElementById(id);
 const getJSON = (u) => fetch(u).then((r) => r.json());
 const postJSON = (u, b) =>
@@ -53,13 +54,19 @@ function ambienteAtual() {
 
 // ------------------------------------------------------------ inicializa
 async function init() {
-  const op = await getJSON("/api/opcoes");
-  preencherSelect($("preset"), op.presets);
-  preencherSelect($("fitness"), op.fitness);
-  preencherSelect($("algoritmo"), op.algoritmos);
-  preencherSelect($("controlador"), op.controladores);
-  preencherSelect($("save"), op.saves.length ? op.saves : ["(nenhum save)"]);
-  $("cpus-info").textContent = `(0 = todos; você tem ${op.cpus})`;
+  try {
+    const op = await getJSON("/api/opcoes");
+    preencherSelect($("preset"), op.presets || []);
+    preencherSelect($("fitness"), op.fitness || []);
+    preencherSelect($("algoritmo"), op.algoritmos || []);
+    preencherSelect($("controlador"), op.controladores || []);
+    const saves = op.saves || [];
+    preencherSelect($("save"), saves.length ? saves : ["(nenhum save)"]);
+    montarCompeticao(saves);
+    $("cpus-info").textContent = `(0 = todos; você tem ${op.cpus})`;
+  } catch (e) {
+    $("msg").textContent = "Falha ao carregar opções do servidor: " + e;
+  }
 
   $("modo").addEventListener("change", () => {
     const cont = $("modo").value === "continuar";
@@ -71,6 +78,15 @@ async function init() {
   $("btn-parar").addEventListener("click", () => postJSON("/api/parar"));
   $("btn-salvar").addEventListener("click", salvar);
   $("ao-vivo").addEventListener("change", (e) => { S.aoVivo = e.target.checked; });
+
+  // competição
+  $("comp-modo").addEventListener("change", () => {
+    const corr = $("comp-modo").value === "corrida";
+    $("bloco-corrida").style.display = corr ? "block" : "none";
+    $("bloco-caca").style.display = corr ? "none" : "block";
+  });
+  $("btn-correr").addEventListener("click", correr);
+  $("btn-cacar").addEventListener("click", cacar);
 
   // sliders de ambiente: rótulo ao vivo + re-simula no playback (debounce).
   const liga = (id, span, fmt) => {
@@ -87,6 +103,59 @@ async function init() {
   setInterval(loopStatus, 1000);
   setInterval(loopFrames, 600);
   requestAnimationFrame(loopRender);
+}
+
+function montarCompeticao(saves) {
+  const reais = saves.filter((s) => !s.startsWith("("));
+  const cont = $("corrida-saves");
+  cont.innerHTML = "";
+  reais.forEach((p, i) => {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = p; if (i < 2) cb.checked = true;
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(p));
+    cont.appendChild(lab);
+  });
+  const lista = reais.length ? reais : ["(nenhum save)"];
+  preencherSelect($("caca-cacador"), lista);
+  preencherSelect($("caca-presa"), lista);
+  if (reais.length > 1) $("caca-presa").value = reais[1];
+}
+
+function legenda(grupos) {
+  return grupos.map((g, i) =>
+    `<span class="leg" style="background:${PALETA[i % PALETA.length]}"></span>${g}`
+  ).join(" &nbsp; ");
+}
+
+async function correr() {
+  const saves = [...document.querySelectorAll("#corrida-saves input:checked")]
+    .map((c) => c.value);
+  if (saves.length < 2) { $("comp-msg").textContent = "Marque ao menos 2 competidores."; return; }
+  $("comp-msg").textContent = "correndo…";
+  $("ao-vivo").checked = false; S.aoVivo = false;
+  const r = await postJSON("/api/corrida",
+    { saves, ambiente: ambienteAtual(), segundos: +$("duracao").value });
+  if (r.erro) { $("comp-msg").textContent = r.erro; return; }
+  carregarFrames(r);
+  const linhas = r.ranking.map((x, i) => `${i + 1}º ${x.nome} — ${x.dist} m`).join("<br>");
+  $("comp-msg").innerHTML = legenda(r.grupos) + "<br>" + linhas;
+}
+
+async function cacar() {
+  const cacador = $("caca-cacador").value, presa = $("caca-presa").value;
+  if (cacador.startsWith("(")) { $("comp-msg").textContent = "Sem saves disponíveis."; return; }
+  $("comp-msg").textContent = "caçando…";
+  $("ao-vivo").checked = false; S.aoVivo = false;
+  const r = await postJSON("/api/caca",
+    { cacador, presa, ambiente: ambienteAtual(), segundos: +$("duracao").value });
+  if (r.erro) { $("comp-msg").textContent = r.erro; return; }
+  carregarFrames(r);
+  const re = r.resultado;
+  const txt = re.capturou
+    ? `🎯 CAPTUROU em ${re.tempo}s`
+    : `🏃 a presa sobreviveu (distância final ${re.distancia} m)`;
+  $("comp-msg").innerHTML = legenda(r.grupos) + "<br>" + txt;
 }
 
 async function iniciar() {
@@ -196,8 +265,10 @@ function loopRender(now) {
     desenharGrade(S.cam.target[0], S.cam.target[2]);
     frame.forEach((s) => {
       const a = [s[0], s[1], s[2]], b = [s[3], s[4], s[5]];
-      const baixo = Math.min(s[1], s[4]) < 0.12;
-      linha(a, b, baixo ? "#f0883e" : "#58a6ff", 3); // pés perto do chão em laranja
+      let cor;
+      if (s.length > 6) cor = PALETA[s[6] % PALETA.length];       // grupo (corrida/caça)
+      else cor = (Math.min(s[1], s[4]) < 0.12) ? "#f0883e" : "#58a6ff";
+      linha(a, b, cor, 3);
     });
   } else {
     cx.fillStyle = "#8b949e"; cx.font = "14px system-ui";

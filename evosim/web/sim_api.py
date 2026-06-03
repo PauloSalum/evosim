@@ -56,6 +56,72 @@ def ambiente_com_override(base: dict, override: Optional[dict]) -> ConfigAmbient
     return ConfigAmbiente(**dados)
 
 
+def _snapshot_multi(motor) -> List[List[float]]:
+    """Segmentos de TODAS as criaturas do motor, cada um marcado com o índice
+    da criatura (7º valor) para colorir grupos diferentes no 3D."""
+    out: List[List[float]] = []
+    for ci, corpo in enumerate(motor.corpos):
+        nos = set(corpo.nos)
+        for (a, b, _r) in motor.bones:
+            if a in nos and b in nos:
+                pa, pb = motor.pos[a], motor.pos[b]
+                out.append([pa.x, pa.y, pa.z, pb.x, pb.y, pb.z, ci])
+    return out
+
+
+def rodar_corrida_web(
+    saves: List[Save], override_ambiente: Optional[dict] = None,
+    segundos: float = 10.0, cada: int = 2,
+) -> dict:
+    """Corrida entre vários saves: anima todos e devolve o ranking."""
+    from ..modos.corrida import Competidor, rodar_corrida
+    ambiente = ambiente_com_override(ConfigAmbiente().__dict__, override_ambiente)
+    sim = ConfigSimulacao(duracao_segundos=segundos)
+    comps = [Competidor.de_save(s) for s in saves]
+    frames: List[List[List[float]]] = []
+
+    def hook(motor, passo):
+        if passo % cada == 0:
+            frames.append(_snapshot_multi(motor))
+
+    ranking = rodar_corrida(comps, ambiente=ambiente, sim=sim, on_step=hook)
+    return {
+        "frames": frames, "dt": sim.dt * cada,
+        "grupos": [c.nome for c in comps],
+        "ranking": [{"nome": n, "dist": round(d, 2)} for n, d in ranking],
+    }
+
+
+def rodar_caca_web(
+    save_cacador: Save, save_presa: Save,
+    override_ambiente: Optional[dict] = None, segundos: float = 10.0, cada: int = 2,
+) -> dict:
+    """Episódio de caça entre dois saves: anima e devolve o desfecho."""
+    from ..modos.caca_cacador import rodar_episodio
+    ambiente = ambiente_com_override(ConfigAmbiente().__dict__, override_ambiente)
+    sim = ConfigSimulacao(duracao_segundos=segundos)
+    dna_c = save_cacador.dna_obj()
+    dna_p = save_presa.dna_obj()
+    ctrl_c = save_cacador.melhor_genoma().instanciar_controlador()
+    ctrl_p = save_presa.melhor_genoma().instanciar_controlador()
+    frames: List[List[List[float]]] = []
+
+    def hook(motor, passo):
+        if passo % cada == 0:
+            frames.append(_snapshot_multi(motor))
+
+    res = rodar_episodio(dna_c, ctrl_c, dna_p, ctrl_p, ambiente, sim, on_step=hook)
+    return {
+        "frames": frames, "dt": sim.dt * cada,
+        "grupos": [f"caçador ({save_cacador.preset})", f"presa ({save_presa.preset})"],
+        "resultado": {
+            "capturou": res.capturou,
+            "tempo": round(res.tempo, 2),
+            "distancia": round(res.distancia_final, 2),
+        },
+    }
+
+
 def frames_de_save(
     save: Save,
     override_ambiente: Optional[dict] = None,

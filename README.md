@@ -90,6 +90,8 @@ Na web você pode:
   re-simulam o melhor indivíduo na hora;
 * **Assistir o campeão de cada geração em 3D enquanto treina**, com gráfico de
   fitness ao vivo; girar a câmera (arrastar) e dar zoom (roda do mouse);
+* **Competir**: Corrida (vários saves lado a lado, com ranking) e Caça e
+  Caçador (1 vs 1, com desfecho), cada criatura em uma cor;
 * **Salvar** o resultado.
 
 ### Modo fácil — menu interativo (recomendado)

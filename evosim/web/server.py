@@ -62,7 +62,12 @@ class Handler(BaseHTTPRequestHandler):
     def _estatico(self, caminho: str) -> None:
         if caminho in ("", "/"):
             caminho = "/index.html"
-        alvo = os.path.normpath(os.path.join(_DIR_STATIC, caminho.lstrip("/")))
+        rel = caminho.lstrip("/")
+        # o frontend referencia os arquivos sob o prefixo /static/, mas eles
+        # já vivem em _DIR_STATIC — remove o prefixo para não duplicar a pasta.
+        if rel.startswith("static/"):
+            rel = rel[len("static/"):]
+        alvo = os.path.normpath(os.path.join(_DIR_STATIC, rel))
         if not alvo.startswith(_DIR_STATIC) or not os.path.isfile(alvo):
             self._json({"erro": "não encontrado"}, 404)
             return
@@ -116,6 +121,23 @@ class Handler(BaseHTTPRequestHandler):
                 save = carregar(corpo["save_path"])
                 self._json(sim_api.frames_de_save(
                     save, corpo.get("ambiente"), float(corpo.get("segundos", 8.0))))
+            except Exception as e:
+                self._json({"erro": str(e), "frames": []}, 200)
+        elif rota == "/api/corrida":
+            try:
+                saves = [carregar(p) for p in corpo.get("saves", [])]
+                if len(saves) < 2:
+                    raise ValueError("Escolha ao menos 2 saves.")
+                self._json(sim_api.rodar_corrida_web(
+                    saves, corpo.get("ambiente"), float(corpo.get("segundos", 10.0))))
+            except Exception as e:
+                self._json({"erro": str(e), "frames": []}, 200)
+        elif rota == "/api/caca":
+            try:
+                sc = carregar(corpo["cacador"])
+                sp = carregar(corpo["presa"])
+                self._json(sim_api.rodar_caca_web(
+                    sc, sp, corpo.get("ambiente"), float(corpo.get("segundos", 10.0))))
             except Exception as e:
                 self._json({"erro": str(e), "frames": []}, 200)
         else:

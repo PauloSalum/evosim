@@ -69,6 +69,27 @@
         <button id="btn-salvar" disabled>💾 Salvar</button>
       </div>
       <div id="msg" class="msg"></div>
+
+      <fieldset>
+        <legend>Competição (entre saves)</legend>
+        <label>Modo
+          <select id="comp-modo">
+            <option value="corrida">Corrida (vários, lado a lado)</option>
+            <option value="caca">Caça e Caçador (1 vs 1)</option>
+          </select>
+        </label>
+        <div id="bloco-corrida">
+          <small>Marque 2+ competidores:</small>
+          <div id="corrida-saves" class="lista-saves"></div>
+          <button id="btn-correr">🏁 Correr</button>
+        </div>
+        <div id="bloco-caca" style="display:none">
+          <label>Caçador <select id="caca-cacador"></select></label>
+          <label>Presa <select id="caca-presa"></select></label>
+          <button id="btn-cacar">🎯 Caçar</button>
+        </div>
+        <div id="comp-msg" class="comp-msg"></div>
+      </fieldset>
     </section>
 
     <!-- ===== Visualização ===== -->
