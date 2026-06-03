@@ -1,19 +1,14 @@
-"""Adaptador para PyBullet — engine de corpos rígidos robusta (opcional).
+"""Motor de física baseado em PyBullet (Bullet) — corpos rígidos articulados.
 
-Implementa a mesma interface ``MotorFisica`` / ``CorpoCriatura`` do motor
-interno, porém com física de corpos rígidos completa (colisões, atrito,
-restituição reais). Use-o quando quiser fidelidade máxima:
+Este é o caminho de **física do estado da arte** (a mesma família usada pelos
+ambientes de locomoção do MuJoCo/PyBullet Gym: Ant, HalfCheetah, Humanoid).
+A criatura é um único *multibody articulado* (algoritmo de Featherstone):
+elos rígidos ligados por juntas de revolução, atuados por **motores de junta
+com torque limitado** (POSITION_CONTROL + maxForce). Isso modela um músculo de
+forma fisicamente correta — diferente de reposicionar massa cinematicamente —
+então não há injeção de energia nem movimento em espiral antinatural.
 
-    pip install pybullet
-
-Modelo de coordenadas maximais: cada segmento é um corpo rígido (cápsula)
-conectado ao pai por uma restrição ponto-a-ponto; os músculos aplicam torque
-limitado no eixo da junta (análogo ao motor interno). A simulação roda em
-**passo fixo** (``setTimeStep`` + ``setPhysicsEngineParameter`` determinístico).
-
-Este módulo não tem dependência em tempo de import: o ``import pybullet`` só
-ocorre ao instanciar ``MotorPyBullet``, então o resto do sistema funciona sem
-ele instalado.
+Requer:  pip install pybullet
 """
 from __future__ import annotations
 
@@ -34,51 +29,57 @@ def disponivel() -> bool:
         return False
 
 
-def _quat_de_para(p, origem: Vec3, destino: Vec3):
-    """Quaternion que rotaciona ``origem`` para ``destino`` (ambos unitários)."""
-    a = origem.normalized()
-    b = destino.normalized()
+# --- utilidades de quaternion via API do pybullet --------------------------
+def _qmul(p, q1, q2):
+    return p.multiplyTransforms([0, 0, 0], q1, [0, 0, 0], q2)[1]
+
+
+def _qinv(p, q):
+    return p.invertTransform([0, 0, 0], q)[1]
+
+
+def _rot(p, q, v):
+    return p.multiplyTransforms([0, 0, 0], q, list(v), [0, 0, 0, 1])[0]
+
+
+def _quat_from_to(a: Vec3, b: Vec3):
+    """Quaternion [x,y,z,w] que leva o vetor ``a`` ao vetor ``b``."""
+    a = a.normalized()
+    b = b.normalized()
     eixo = a.cross(b)
     ang = math.atan2(eixo.length(), a.dot(b))
     if eixo.length() < EPS:
+        if a.dot(b) > 0:
+            return [0.0, 0.0, 0.0, 1.0]
         eixo = Vec3(1, 0, 0) if abs(a.x) < 0.9 else Vec3(0, 1, 0)
     e = eixo.normalized()
-    return p.getQuaternionFromAxisAngle([e.x, e.y, e.z], ang) \
-        if hasattr(p, "getQuaternionFromAxisAngle") else _quat_axis_angle(e, ang)
-
-
-def _quat_axis_angle(e: Vec3, ang: float):
     s = math.sin(ang / 2.0)
     return [e.x * s, e.y * s, e.z * s, math.cos(ang / 2.0)]
 
 
-class _JuntaPB:
-    __slots__ = ("corpo_filho", "corpo_pai", "eixo", "lo", "hi",
-                 "torque_max", "rigidez", "alvo_norm", "rest")
+class _Junta:
+    __slots__ = ("idx", "lo", "hi", "torque_max", "alvo_norm")
 
-    def __init__(self):
-        self.corpo_filho = 0
-        self.corpo_pai = 0
-        self.eixo = Vec3(0, 0, 1)
-        self.lo = -math.pi
-        self.hi = math.pi
-        self.torque_max = 40.0
-        self.rigidez = 0.4
+    def __init__(self, idx, lo, hi, torque):
+        self.idx = idx
+        self.lo = lo
+        self.hi = hi
+        self.torque_max = torque
         self.alvo_norm = 0.0
-        self.rest = 0.0
 
 
 class CorpoPyBullet(CorpoCriatura):
-    def __init__(self, motor: "MotorPyBullet"):
+    def __init__(self, motor: "MotorPyBullet", robot: int):
         self.motor = motor
         self.p = motor.p
-        self.bodies: Dict[str, int] = {}
+        self.robot = robot
+        self.juntas: List[_Junta] = []
+        self.massas: List[float] = []        # massa de base + cada elo
         self.massa_total = 0.0
-        self.massas: Dict[str, float] = {}
-        self.juntas: List[_JuntaPB] = []
-        self.id_core = -1
-        self.pes: List[int] = []        # bodyIds dos segmentos-pé
-        self.proibidos: List[int] = []  # bodyIds proibidos de tocar o solo
+        self.pes: List[int] = []             # índices de elo dos pés
+        self.proibidos: List[int] = []       # índices de elo proibidos (cabeça)
+        self.todos_elos: List[int] = []      # -1 (base) + elos
+        self.up_local = [0.0, 1.0, 0.0]      # "para cima" do corpo no repouso
         self._energia = 0.0
         self._alvo: Optional[Vec3] = None
 
@@ -86,17 +87,8 @@ class CorpoPyBullet(CorpoCriatura):
     def num_juntas(self) -> int:
         return len(self.juntas)
 
-    def _orient_forward(self, body: int) -> Vec3:
-        _, orn = self.p.getBasePositionAndOrientation(body)
-        m = self.p.getMatrixFromQuaternion(orn)
-        return Vec3(m[2], m[5], m[8])  # eixo Z local em coordenadas do mundo
-
     def angulo_junta(self, i: int) -> float:
-        j = self.juntas[i]
-        fp = self._orient_forward(j.corpo_pai)
-        fc = self._orient_forward(j.corpo_filho)
-        n = j.eixo.normalized()
-        return math.atan2(fp.cross(fc).dot(n), fp.dot(fc)) - j.rest
+        return self.p.getJointState(self.robot, self.juntas[i].idx)[0]
 
     def limites_junta(self, i: int) -> Tuple[float, float]:
         j = self.juntas[i]
@@ -106,50 +98,41 @@ class CorpoPyBullet(CorpoCriatura):
         self.juntas[i].alvo_norm = clamp(valor_norm, -1.0, 1.0)
 
     # --- estado -------------------------------------------------------
+    def _pos_elo(self, idx: int) -> Vec3:
+        if idx < 0:
+            return Vec3(*self.p.getBasePositionAndOrientation(self.robot)[0])
+        return Vec3(*self.p.getLinkState(self.robot, idx)[0])
+
     def centro_de_massa(self) -> Vec3:
         acc = Vec3(0, 0, 0)
-        for sid, body in self.bodies.items():
-            pos, _ = self.p.getBasePositionAndOrientation(body)
-            acc = acc + Vec3(*pos) * self.massas[sid]
+        for idx, m in zip(self.todos_elos, self.massas):
+            acc = acc + self._pos_elo(idx) * m
         return acc / self.massa_total if self.massa_total > EPS else Vec3()
 
     def pos_core(self) -> Vec3:
-        pos, _ = self.p.getBasePositionAndOrientation(self.id_core)
-        return Vec3(*pos)
+        return Vec3(*self.p.getBasePositionAndOrientation(self.robot)[0])
 
     def velocidade_cm(self) -> Vec3:
-        acc = Vec3(0, 0, 0)
-        for sid, body in self.bodies.items():
-            v, _ = self.p.getBaseVelocity(body)
-            acc = acc + Vec3(*v) * self.massas[sid]
-        return acc / self.massa_total if self.massa_total > EPS else Vec3()
+        return Vec3(*self.p.getBaseVelocity(self.robot)[0])
 
     def vetor_up_core(self) -> Vec3:
-        _, orn = self.p.getBasePositionAndOrientation(self.id_core)
-        m = self.p.getMatrixFromQuaternion(orn)
-        return Vec3(m[1], m[4], m[7])  # eixo Y local no mundo
+        _, orn = self.p.getBasePositionAndOrientation(self.robot)
+        return Vec3(*_rot(self.p, orn, self.up_local))
+
+    # --- contatos -----------------------------------------------------
+    def _toca(self, idx: int) -> bool:
+        return len(self.p.getContactPoints(bodyA=self.robot, linkIndexA=idx,
+                                           bodyB=self.motor.solo)) > 0
 
     def contatos_pe(self) -> List[bool]:
-        out = []
-        for body in self.pes:
-            pts = self.p.getContactPoints(bodyA=body, bodyB=self.motor.solo)
-            out.append(len(pts) > 0)
-        return out
+        return [self._toca(i) for i in self.pes]
 
     def parte_proibida_no_solo(self) -> bool:
-        for body in self.proibidos:
-            if self.p.getContactPoints(bodyA=body, bodyB=self.motor.solo):
-                return True
-        return False
+        return any(self._toca(i) for i in self.proibidos)
 
     def parte_nao_pe_no_solo(self) -> bool:
         pes = set(self.pes)
-        for body in self.bodies.values():
-            if body in pes:
-                continue
-            if self.p.getContactPoints(bodyA=body, bodyB=self.motor.solo):
-                return True
-        return False
+        return any(self._toca(i) for i in self.todos_elos if i not in pes)
 
     def energia_acumulada(self) -> float:
         return self._energia
@@ -162,160 +145,200 @@ class MotorPyBullet(MotorFisica):
         import pybullet_data
         self.p = p
         self.cid = p.connect(p.GUI if gui else p.DIRECT)
+        p.resetSimulation(physicsClientId=self.cid)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         g = ambiente.vetor_gravidade
         p.setGravity(g.x, g.y, g.z)
-        # Passo fixo e determinístico (não usar setRealTimeSimulation).
-        p.setPhysicsEngineParameter(
-            fixedTimeStep=1.0 / 240.0, numSolverIterations=50,
-            deterministicOverlappingPairs=1,
-        )
-        self.solo = p.loadURDF("plane.urdf")
-        p.changeDynamics(self.solo, -1,
-                         lateralFriction=ambiente.friccao_solo,
-                         restitution=ambiente.restituicao_solo)
+        p.setPhysicsEngineParameter(numSolverIterations=60,
+                                    deterministicOverlappingPairs=1)
+        self.solo = self._criar_solo()
         self.corpos: List[CorpoPyBullet] = []
         self.substeps = 4
+
+    def _criar_solo(self) -> int:
+        # Plano de chão com normal +Y (mundo Y-up, igual ao resto do sistema).
+        # O plane.urdf padrão do PyBullet tem normal +Z (Z-up) e não serviria.
+        p = self.p
+        col = p.createCollisionShape(p.GEOM_PLANE, planeNormal=[0, 1, 0])
+        solo = p.createMultiBody(0, col,
+                                 basePosition=[0, self.ambiente.altura_solo, 0])
+        p.changeDynamics(solo, -1, lateralFriction=self.ambiente.friccao_solo,
+                         restitution=self.ambiente.restituicao_solo)
+        return solo
 
     def reset(self) -> None:
         self.p.resetSimulation()
         g = self.ambiente.vetor_gravidade
         self.p.setGravity(g.x, g.y, g.z)
-        self.solo = self.p.loadURDF("plane.urdf")
+        self.solo = self._criar_solo()
         self.corpos.clear()
         self.tempo = 0.0
+
+    def fechar(self) -> None:
+        try:
+            self.p.disconnect(self.cid)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     def construir_criatura(self, dna: CriaturaDNA, posicao_base: Vec3) -> CorpoPyBullet:
         dna.validar()
         p = self.p
-        corpo = CorpoPyBullet(self)
-
-        # posições dos nós (igual ao motor interno) para situar cada cápsula.
-        por_id = dna.por_id()
-        no_pos: Dict[str, Tuple[Vec3, Vec3]] = {}  # seg.id -> (prox, distal)
         raiz = dna.raiz()
 
-        def coloca(seg: SegmentoDNA, prox: Vec3):
-            distal = prox + seg.direcao_vec.normalized() * seg.comprimento
-            no_pos[seg.id] = (prox, distal)
+        # 1) pose de repouso: posição do nó proximal (junta) e direção de cada
+        # segmento no mundo, percorrendo a árvore.
+        prox_world: Dict[str, Vec3] = {}
+        qworld: Dict[str, list] = {}
+        prox_world[raiz.id] = Vec3(0, 0, 0)
+        qworld[raiz.id] = _quat_from_to(Vec3(1, 0, 0), raiz.direcao_vec)
+
+        def colocar(seg: SegmentoDNA):
             for filho in dna.filhos_de(seg.id):
-                attach = prox if filho.conecta_em == "proximal" else distal
-                coloca(filho, attach)
+                base = (prox_world[seg.id] if filho.conecta_em == "proximal"
+                        else prox_world[seg.id] + seg.direcao_vec.normalized() * seg.comprimento)
+                prox_world[filho.id] = base
+                qworld[filho.id] = _quat_from_to(Vec3(1, 0, 0), filho.direcao_vec)
+                colocar(filho)
+        colocar(raiz)
 
-        coloca(raiz, Vec3(0, 0, 0))
-
-        # reposiciona para assentar no solo + base x/z.
-        todos = [v for pr in no_pos.values() for v in pr]
-        miny = min(v.y for v in todos)
-        cx = sum(v.x for v in todos) / len(todos)
-        cz = sum(v.z for v in todos) / len(todos)
+        # 2) assenta no solo: desloca para o ponto mais baixo ficar acima do chão.
+        extremos = []
+        for sid in prox_world:
+            seg = dna.por_id()[sid]
+            extremos.append(prox_world[sid])
+            extremos.append(prox_world[sid] + seg.direcao_vec.normalized() * seg.comprimento)
+        miny = min(v.y for v in extremos)
+        cx = sum(v.x for v in extremos) / len(extremos)
+        cz = sum(v.z for v in extremos) / len(extremos)
         desloc = Vec3(posicao_base.x - cx,
-                      self.ambiente.altura_solo + 0.08 - miny,
+                      self.ambiente.altura_solo + 0.12 - miny,
                       posicao_base.z - cz)
 
-        for seg in dna.segmentos:
-            prox, distal = no_pos[seg.id]
-            prox = prox + desloc
-            distal = distal + desloc
-            centro = (prox + distal) * 0.5
-            r = max(0.02, seg.largura * 0.5)
-            col = p.createCollisionShape(p.GEOM_CAPSULE, radius=r,
-                                         height=seg.comprimento)
-            orn = _quat_de_para(p, Vec3(0, 0, 1), distal - prox)
-            body = p.createMultiBody(
-                baseMass=seg.massa, baseCollisionShapeIndex=col,
-                basePosition=[centro.x, centro.y, centro.z], baseOrientation=orn,
-            )
-            p.changeDynamics(body, -1, lateralFriction=self.ambiente.friccao_solo,
+        # 3) ordem topológica dos elos (não-raiz) e índices.
+        ordem: List[SegmentoDNA] = []
+        def topo(seg):
+            for f in dna.filhos_de(seg.id):
+                ordem.append(f); topo(f)
+        topo(raiz)
+        idx_arr = {seg.id: i for i, seg in enumerate(ordem)}  # 0-based (=jointIndex)
+
+        def capsula(seg: SegmentoDNA):
+            r = max(0.03, seg.largura * 0.5)
+            q_zx = _quat_from_to(Vec3(0, 0, 1), Vec3(1, 0, 0))  # cápsula Z -> X
+            col = p.createCollisionShape(
+                p.GEOM_CAPSULE, radius=r, height=seg.comprimento,
+                collisionFramePosition=[seg.comprimento * 0.5, 0, 0],
+                collisionFrameOrientation=q_zx)
+            return col
+
+        # 4) monta os arrays do multibody.
+        link_mass, link_col, link_vis = [], [], []
+        link_pos, link_orn = [], []
+        link_inertial_pos, link_inertial_orn = [], []
+        link_parent, link_jtype, link_jaxis = [], [], []
+
+        for seg in ordem:
+            pai = dna.por_id()[seg.pai]
+            # posição da junta no frame do PAI (eixo local +X do pai).
+            if seg.conecta_em == "proximal":
+                lp = [0.0, 0.0, 0.0]
+            else:
+                lp = [pai.comprimento, 0.0, 0.0]
+            rel_orn = _qmul(p, _qinv(p, qworld[seg.pai]), qworld[seg.id])
+            link_mass.append(seg.massa)
+            link_col.append(capsula(seg))
+            link_vis.append(-1)
+            link_pos.append(lp)
+            link_orn.append(rel_orn)
+            link_inertial_pos.append([0, 0, 0])
+            link_inertial_orn.append([0, 0, 0, 1])
+            link_parent.append(0 if seg.pai == raiz.id else idx_arr[seg.pai] + 1)
+            link_jtype.append(p.JOINT_REVOLUTE)
+            link_jaxis.append(list(seg.junta.eixo_vec))
+
+        base_pos = (prox_world[raiz.id] + desloc).as_list()
+        robot = p.createMultiBody(
+            baseMass=raiz.massa,
+            baseCollisionShapeIndex=capsula(raiz),
+            basePosition=base_pos,
+            baseOrientation=qworld[raiz.id],
+            baseInertialFramePosition=[0, 0, 0],
+            linkMasses=link_mass,
+            linkCollisionShapeIndices=link_col,
+            linkVisualShapeIndices=link_vis,
+            linkPositions=link_pos,
+            linkOrientations=link_orn,
+            linkInertialFramePositions=link_inertial_pos,
+            linkInertialFrameOrientations=link_inertial_orn,
+            linkParentIndices=link_parent,
+            linkJointTypes=link_jtype,
+            linkJointAxis=link_jaxis,
+        )
+
+        corpo = CorpoPyBullet(self, robot)
+        p.changeDynamics(robot, -1, lateralFriction=self.ambiente.friccao_solo,
+                         restitution=self.ambiente.restituicao_solo)
+        # base = core; "para cima" do corpo no repouso (consistente entre presets).
+        corpo.up_local = list(_rot(p, _qinv(p, qworld[raiz.id]), [0, 1, 0]))
+        corpo.todos_elos = [-1] + list(range(len(ordem)))
+        corpo.massas = [raiz.massa] + link_mass
+        corpo.massa_total = raiz.massa + sum(link_mass)
+        corpo.comprimentos = [raiz.comprimento] + [s.comprimento for s in ordem]
+        if raiz.eh_pe:
+            corpo.pes.append(-1)
+        if raiz.proibido_solo:
+            corpo.proibidos.append(-1)
+
+        for seg in ordem:
+            j = idx_arr[seg.id]
+            p.changeDynamics(robot, j, lateralFriction=self.ambiente.friccao_solo,
                              restitution=self.ambiente.restituicao_solo,
-                             linearDamping=self.ambiente.arrasto_fluido)
-            corpo.bodies[seg.id] = body
-            corpo.massas[seg.id] = seg.massa
-            corpo.massa_total += seg.massa
-            if seg.papel == "core":
-                corpo.id_core = body
+                             jointLowerLimit=seg.junta.limite_min,
+                             jointUpperLimit=seg.junta.limite_max,
+                             linearDamping=self.ambiente.arrasto_fluido,
+                             angularDamping=self.ambiente.arrasto_fluido)
+            corpo.juntas.append(_Junta(j, seg.junta.limite_min,
+                                       seg.junta.limite_max, seg.junta.torque_max))
             if seg.eh_pe:
-                corpo.pes.append(body)
+                corpo.pes.append(j)
             if seg.proibido_solo:
-                corpo.proibidos.append(body)
-
-        # restrições de junta (ponto-a-ponto na posição do nó compartilhado).
-        for seg in dna.segmentos:
-            if seg.pai is None:
-                continue
-            prox, _ = no_pos[seg.id]
-            pivot = prox + desloc
-            pai_body = corpo.bodies[seg.pai]
-            filho_body = corpo.bodies[seg.id]
-            self._ponto_a_ponto(corpo, pai_body, filho_body, pivot)
-            j = _JuntaPB()
-            j.corpo_pai = pai_body
-            j.corpo_filho = filho_body
-            j.eixo = seg.junta.eixo_vec
-            j.lo, j.hi = seg.junta.limite_min, seg.junta.limite_max
-            j.torque_max = seg.junta.torque_max
-            j.rigidez = seg.junta.rigidez
-            corpo.juntas.append(j)
-
-        # rest angles
-        for i, j in enumerate(corpo.juntas):
-            fp = corpo._orient_forward(j.corpo_pai)
-            fc = corpo._orient_forward(j.corpo_filho)
-            n = j.eixo.normalized()
-            j.rest = math.atan2(fp.cross(fc).dot(n), fp.dot(fc))
+                corpo.proibidos.append(j)
 
         self.corpos.append(corpo)
         return corpo
-
-    def _ponto_a_ponto(self, corpo, pai_body, filho_body, pivot_world: Vec3):
-        p = self.p
-        ppos, porn = p.getBasePositionAndOrientation(pai_body)
-        cpos, corn = p.getBasePositionAndOrientation(filho_body)
-        inv_p = p.invertTransform(ppos, porn)
-        inv_c = p.invertTransform(cpos, corn)
-        piv_p, _ = p.multiplyTransforms(inv_p[0], inv_p[1],
-                                        [pivot_world.x, pivot_world.y, pivot_world.z],
-                                        [0, 0, 0, 1])
-        piv_c, _ = p.multiplyTransforms(inv_c[0], inv_c[1],
-                                        [pivot_world.x, pivot_world.y, pivot_world.z],
-                                        [0, 0, 0, 1])
-        p.createConstraint(pai_body, -1, filho_body, -1, p.JOINT_POINT2POINT,
-                           [0, 0, 0], piv_p, piv_c)
 
     # ------------------------------------------------------------------
     def passo(self, dt: float) -> None:
         p = self.p
         for corpo in self.corpos:
             for j in corpo.juntas:
-                self._aplicar_musculo(corpo, j)
-        # garante consistência com o dt fixo configurado.
+                amp = 0.5 * (j.hi - j.lo)
+                alvo = clamp(j.alvo_norm * amp, j.lo, j.hi)
+                p.setJointMotorControl2(corpo.robot, j.idx, p.POSITION_CONTROL,
+                                        targetPosition=alvo, force=j.torque_max)
         p.setTimeStep(dt / self.substeps)
         for _ in range(self.substeps):
             p.stepSimulation()
+        for corpo in self.corpos:
+            for j in corpo.juntas:
+                tau = p.getJointState(corpo.robot, j.idx)[3]
+                corpo._energia += abs(tau) * dt
         self.tempo += dt
 
-    def _aplicar_musculo(self, corpo: CorpoPyBullet, j: _JuntaPB) -> None:
-        p = self.p
-        atual = corpo.angulo_junta(corpo.juntas.index(j))
-        amp = 0.5 * (j.hi - j.lo)
-        alvo = clamp(j.alvo_norm * amp, j.lo, j.hi)
-        erro = alvo - atual
-        torque = clamp(erro * j.rigidez * j.torque_max, -j.torque_max, j.torque_max)
-        n = j.eixo.normalized()
-        vetor = [n.x * torque, n.y * torque, n.z * torque]
-        p.applyExternalTorque(j.corpo_filho, -1, vetor, p.WORLD_FRAME)
-        p.applyExternalTorque(j.corpo_pai, -1,
-                              [-vetor[0], -vetor[1], -vetor[2]], p.WORLD_FRAME)
-        corpo._energia += abs(torque) * 0.01
-
+    # ------------------------------------------------------------------
     def coletar_segmentos_render(self) -> List[Tuple[Vec3, Vec3, str]]:
+        p = self.p
         linhas = []
         for corpo in self.corpos:
-            for sid, body in corpo.bodies.items():
-                pos, orn = self.p.getBasePositionAndOrientation(body)
-                m = self.p.getMatrixFromQuaternion(orn)
-                fwd = Vec3(m[2], m[5], m[8])
-                c = Vec3(*pos)
-                linhas.append((c - fwd * 0.2, c + fwd * 0.2, sid))
+            for k, idx in enumerate(corpo.todos_elos):
+                if idx < 0:
+                    pos, orn = p.getBasePositionAndOrientation(corpo.robot)
+                else:
+                    st = p.getLinkState(corpo.robot, idx)
+                    pos, orn = st[4], st[5]
+                comp = corpo.comprimentos[k]
+                a = Vec3(*pos)
+                b = a + Vec3(*_rot(p, orn, [comp, 0, 0]))
+                linhas.append((a, b, "seg"))
         return linhas

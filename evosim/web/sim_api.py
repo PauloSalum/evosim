@@ -21,6 +21,20 @@ from ..persistencia.serializacao import Save
 Frame = List[List[float]]
 
 
+def _terminou(corpo, sim: ConfigSimulacao, cm: Vec3) -> bool:
+    """Mesmos critérios de parada precoce do treino — para o visualizador
+    mostrar exatamente o que o treino recompensa (e parar na cambalhota/queda)."""
+    if cm.y < sim.altura_critica:
+        return True
+    if corpo.vetor_up_core().y < sim.up_minimo_capotar:
+        return True
+    if sim.apenas_pes_no_solo and corpo.parte_nao_pe_no_solo():
+        return True
+    if sim.proibe_contato_cabeca and corpo.parte_proibida_no_solo():
+        return True
+    return False
+
+
 def simular_frames(
     dna: CriaturaDNA,
     controlador: ControladorNeural,
@@ -28,6 +42,7 @@ def simular_frames(
     sim: ConfigSimulacao,
     cada: int = 2,
     segundos: Optional[float] = None,
+    parar_cedo: bool = True,
 ) -> List[Frame]:
     motor = MotorInterno(ambiente)
     motor.substeps = sim.substeps
@@ -43,6 +58,9 @@ def simular_frames(
                 [a.x, a.y, a.z, b.x, b.y, b.z]
                 for a, b, _ in motor.coletar_segmentos_render()
             ])
+        # encerra a animação no mesmo ponto em que o treino encerraria.
+        if parar_cedo and _terminou(cri.corpo, sim, cri.corpo.centro_de_massa()):
+            break
     return frames
 
 

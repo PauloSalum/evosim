@@ -59,9 +59,10 @@ class ConfigSimulacao:
     # Só os pés podem tocar o solo: qualquer outra parte encostando aborta
     # ("se jogar machuca"). Evita rastejar/usar o corpo como apoio.
     apenas_pes_no_solo: bool = True
-    # Penaliza cambalhotas/capotamento: se o "para cima" do tronco cair abaixo
-    # deste valor (criatura virando de cabeça para baixo), aborta.
-    up_minimo_capotar: float = -0.2
+    # Penaliza cambalhotas/capotamento: o "para cima" do tronco precisa ficar
+    # acima deste valor (1 = perfeitamente em pé, 0 = deitado de lado). Com 0.2
+    # a criatura pode inclinar até ~78°, mas dar uma cambalhota a mata.
+    up_minimo_capotar: float = 0.2
     seed: int = 1234
 
     @property
