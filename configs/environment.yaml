@@ -1,0 +1,28 @@
+# =====================================================================
+# Configuração do AMBIENTE FÍSICO (ConfigAmbiente).
+#
+# IMPORTANTE: estes parâmetros descrevem o MUNDO e são IMUTÁVEIS para o
+# algoritmo de evolução. A evolução só altera os pesos da rede neural —
+# nunca a gravidade, o arrasto ou as propriedades do solo. Isso impede que
+# os indivíduos "trapaceiem" explorando as regras da simulação.
+#
+# Carregar:  evosim.config.carregar_ambiente("configs/environment.yaml")
+# =====================================================================
+
+# Vetor de gravidade [x, y, z] em m/s². Y é o "para cima".
+gravidade: [0.0, -9.81, 0.0]      # Terra. Lua: [0,-1.62,0]  |  Júpiter: [0,-24.8,0]
+
+# Arrasto/viscosidade do fluido (resistência aerodinâmica). 0 = vácuo.
+arrasto_fluido: 0.02              # ar denso/água: 0.2 a 1.0
+
+# Densidade do fluido (usada por motores que modelam empuxo/asas).
+densidade_fluido: 1.225           # ar ~1.225 kg/m³ | água ~1000
+
+# Atrito de Coulomb do solo (0 = gelo, 1 = aderência alta).
+friccao_solo: 0.9
+
+# Restituição do solo (0 = inelástico, 1 = trampolim perfeito).
+restituicao_solo: 0.0
+
+# Altura do plano do solo no eixo Y.
+altura_solo: 0.0

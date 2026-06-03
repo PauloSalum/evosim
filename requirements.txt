@@ -1,0 +1,6 @@
+# EvoSim — o núcleo roda apenas com a biblioteca padrão do Python (>=3.10).
+# As dependências abaixo são TODAS opcionais, para recursos extras:
+
+PyYAML>=6.0        # configs/saves em YAML (JSON funciona sem isto)
+pybullet>=3.2      # motor de física de corpos rígidos + GUI 3D (MotorPyBullet)
+matplotlib>=3.6    # animação 3D leve (render.matplotlib_view)

@@ -1,0 +1,33 @@
+# =====================================================================
+# Configuração da SIMULAÇÃO (ConfigSimulacao): orçamento temporal e
+# critérios de parada precoce (early termination).
+#
+# Carregar:  evosim.config.carregar_simulacao("configs/simulacao.yaml")
+# =====================================================================
+
+# Passo de tempo FIXO da física, em segundos (1/120 s). É independente do FPS
+# de renderização — garante reprodutibilidade em qualquer máquina.
+dt: 0.008333333333333333
+
+# Subpassos do solver de restrições por passo de física (mais = mais estável).
+substeps: 4
+
+# Duração máxima da avaliação de um indivíduo, em segundos simulados.
+duracao_segundos: 12.0
+
+# --- Parada precoce: aborta espécimes inválidos para poupar processamento ---
+
+# Se o centro de massa cair abaixo desta altura (m), considera-se que caiu.
+altura_critica: 0.35
+
+# Tempo inicial de "aquecimento" (s) antes de checar deslocamento mínimo.
+janela_aquecimento: 2.0
+
+# Após o aquecimento, abortar se não avançou ao menos isto (m) no eixo correto.
+deslocamento_minimo: 0.25
+
+# Abortar se uma parte proibida (ex.: a cabeça) tocar o solo.
+proibe_contato_cabeca: true
+
+# Semente do RNG — fixa a reprodutibilidade da evolução.
+seed: 1234
