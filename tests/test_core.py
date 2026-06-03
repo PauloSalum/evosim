@@ -68,16 +68,35 @@ class TestMusculo(unittest.TestCase):
 
 
 class TestFisica(unittest.TestCase):
-    def test_gravidade_aplicada(self):
-        # Gravidade invertida (+Y) deve lançar a criatura para cima, provando
-        # que a aceleração gravitacional é de fato integrada.
-        amb = ConfigAmbiente(gravidade=[0.0, 9.81, 0.0], friccao_solo=0.0)
+    def test_gravidade_faz_cair(self):
+        # Erguemos a criatura no ar e, sem controle, a gravidade deve puxá-la
+        # de volta para baixo (o teto anti-voo limita só a SUBIDA, não a queda).
+        amb = ConfigAmbiente()
         motor = MotorInterno(amb)
         corpo = motor.construir_criatura(criar_preset("humanoide"), Vec3())
+        for n in corpo.nos:
+            motor.pos[n] = motor.pos[n] + Vec3(0.0, 2.0, 0.0)
         y0 = corpo.centro_de_massa().y
-        for _ in range(120):
+        for _ in range(60):
             motor.passo(1 / 120)
-        self.assertGreater(corpo.centro_de_massa().y, y0 + 1.0)
+        self.assertLess(corpo.centro_de_massa().y, y0 - 0.3)
+
+    def test_nao_voa(self):
+        # Mesmo com músculos a todo vapor, a criatura não decola: a subida do
+        # centro de massa é limitada (gravidade domina forças internas).
+        amb = ConfigAmbiente()
+        motor = MotorInterno(amb)
+        dna = criar_preset("quadrupede")
+        corpo = motor.construir_criatura(dna, Vec3())
+        cri = Criatura(dna, corpo)
+        cri.controlador = criar_controlador("cpg", cri.num_entradas(), cri.num_saidas(), seed=3)
+        y0 = corpo.centro_de_massa().y
+        ymax = y0
+        for _ in range(600):
+            cri.passo_controle(motor.tempo)
+            motor.passo(1 / 120)
+            ymax = max(ymax, corpo.centro_de_massa().y)
+        self.assertLess(ymax, y0 + 1.5)
 
     def test_tonus_muscular_mantem_postura(self):
         # Sem comando do cérebro, os músculos sustentam a pose de repouso:

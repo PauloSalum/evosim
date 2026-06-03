@@ -23,8 +23,18 @@ from ..criaturas.dna import CriaturaDNA, SegmentoDNA
 from ..mathutils import EPS, Vec3, clamp
 from .motor import CorpoCriatura, MotorFisica
 
-MAX_VEL = 30.0
+MAX_VEL = 14.0
 _CONTATO_EPS = 0.03
+# Velocidade angular máxima de um músculo (rad/s). Limita o quão rápido um
+# membro pode girar — sem isso os membros "chicoteiam" e a reação do solo
+# catapulta a criatura (parece que não há gravidade).
+MAX_OMEGA = 6.0
+# Teto para a velocidade vertical (m/s) de um nó em contato com o solo. Impede
+# que um pé batendo no chão lance o corpo para o alto (efeito catapulta).
+MAX_VY_CONTATO = 3.0
+# Teto para a velocidade de SUBIDA do centro de massa da criatura (m/s). Garante
+# que nenhuma criatura "voe": no máximo um pulo curto (~v²/2g de altura).
+MAX_VY_CM = 2.5
 
 
 class _Junta:
@@ -323,6 +333,10 @@ class MotorInterno(MotorFisica):
         # 4) atrito de Coulomb + restituição nos nós em contato.
         self._atrito_solo()
 
+        # 5) garantia anti-voo: limita a velocidade de subida do CoM de cada
+        # criatura (forças internas não levantam o corpo; só um pulo curto).
+        self._limitar_subida_cm()
+
     def _atrito_solo(self) -> None:
         chao = self.ambiente.altura_solo
         fr = self.ambiente.friccao_solo
@@ -333,12 +347,24 @@ class MotorInterno(MotorFisica):
                 continue
             v = vel[i]
             vy = -rest * v.y if v.y < 0.0 else v.y
+            # impede catapulta: nó em contato não dispara para cima.
+            if vy > MAX_VY_CONTATO:
+                vy = MAX_VY_CONTATO
             vt = Vec3(v.x, 0.0, v.z)
             vtl = vt.length()
             if vtl > EPS:
                 reduz = min(vtl, fr * max(abs(v.y), 0.5))
                 vt = vt * ((vtl - reduz) / vtl)
             vel[i] = Vec3(vt.x, vy, vt.z)
+
+    def _limitar_subida_cm(self) -> None:
+        for corpo in self.corpos:
+            vcm = self._vcm_de(corpo.nos)
+            if vcm.y > MAX_VY_CM:
+                excesso = vcm.y - MAX_VY_CM
+                for n in corpo.nos:
+                    v = self.vel[n]
+                    self.vel[n] = Vec3(v.x, v.y - excesso, v.z)
 
     def _resolver_bones(self) -> None:
         pos, im = self.pos, self.inv_mass
@@ -358,13 +384,22 @@ class MotorInterno(MotorFisica):
     def _aplicar_musculos(self, sdt: float) -> None:
         pos = self.pos
         for corpo in self.corpos:
+            # CoM antes da atuação: músculos são forças INTERNAS e não podem
+            # deslocar o centro de massa (só gravidade e o contato com o solo,
+            # que são externos, podem). Medimos antes/depois e cancelamos o
+            # deslocamento espúrio — sem isso, girar a sub-árvore de um membro
+            # injeta energia e a criatura "voa".
+            cm_antes = self._cm_de(corpo.nos)
             for j in corpo.juntas:
                 atual = corpo._angulo_atual(j)
                 amp = 0.5 * (j.hi - j.lo)
                 alvo = clamp(j.rest + j.alvo_norm * amp, j.lo, j.hi)
                 erro = alvo - atual
-                # torque limitado => passo angular máximo proporcional ao torque.
-                passo_max = j.rigidez * (j.torque_max / 40.0)
+                # Velocidade angular limitada (rad/s): músculos mais fortes giram
+                # um pouco mais rápido, mas SEMPRE com um teto biológico. Isto
+                # impede o chicoteamento que catapultava a criatura.
+                omega_max = MAX_OMEGA * (0.5 + 0.5 * j.torque_max / 40.0)
+                passo_max = omega_max * sdt
                 delta = clamp(erro * j.rigidez, -passo_max, passo_max)
                 if abs(delta) < 1e-6:
                     continue
@@ -374,6 +409,11 @@ class MotorInterno(MotorFisica):
                     rel = pos[n] - b
                     pos[n] = b + rel.rotate_around(eixo, delta)
                 corpo._energia += abs(delta) * j.torque_max
+            cm_depois = self._cm_de(corpo.nos)
+            desloc = cm_depois - cm_antes
+            if desloc.length_sq() > 1e-18:
+                for n in corpo.nos:
+                    pos[n] = pos[n] - desloc
 
     # ------------------------------------------------------------------
     # Render snapshot.
