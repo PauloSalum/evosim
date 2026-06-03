@@ -41,6 +41,12 @@ def cmd_menu(_args) -> None:
     executar()
 
 
+def cmd_web(args) -> None:
+    from .web import iniciar_servidor
+    iniciar_servidor(host=args.host, port=args.port,
+                     abrir_navegador=not args.sem_navegador)
+
+
 def cmd_listar(_args) -> None:
     print("Presets:", ", ".join(listar_presets()))
     print("Fitness:", ", ".join(listar_fitness()))
@@ -136,6 +142,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("menu", help="Menu interativo (amigável)").set_defaults(func=cmd_menu)
     sub.add_parser("listar", help="Lista presets/fitness/algoritmos").set_defaults(func=cmd_listar)
+
+    w = sub.add_parser("web", help="Interface web (3D no navegador)")
+    w.add_argument("--host", default="127.0.0.1")
+    w.add_argument("--port", type=int, default=8000)
+    w.add_argument("--sem-navegador", dest="sem_navegador", action="store_true",
+                   help="não abrir o navegador automaticamente")
+    w.set_defaults(func=cmd_web)
 
     e = sub.add_parser("evoluir", help="Modo Evolução Isolada")
     e.add_argument("--preset", required=True, choices=listar_presets())

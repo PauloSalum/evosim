@@ -22,3 +22,6 @@ evosim = "evosim.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["evosim*"]
+
+[tool.setuptools.package-data]
+"evosim.web" = ["static/*"]

@@ -72,6 +72,26 @@ passo de tempo **fixo e determinístico**.
 
 ## 2. Instalação e início rápido
 
+### Interface WEB (3D no navegador) ★
+
+A forma mais completa: visualizador 3D interativo + todos os controles no
+navegador, **sem dependências** (o servidor é stdlib; o 3D é um renderizador
+próprio em Canvas).
+
+```bash
+python -m evosim.cli web          # abre http://localhost:8000
+```
+
+Na web você pode:
+* **Evoluir do zero** (escolhendo preset, fitness, algoritmo, cérebro, núcleos…);
+* **Continuar a evolução a partir de um save** (warm-start) — "chegou no ponto,
+  agora evolui outro / continua esse";
+* **Mudar a gravidade (e atrito/arrasto) em tempo real** — os sliders
+  re-simulam o melhor indivíduo na hora;
+* **Assistir o campeão de cada geração em 3D enquanto treina**, com gráfico de
+  fitness ao vivo; girar a câmera (arrastar) e dar zoom (roda do mouse);
+* **Salvar** o resultado.
+
 ### Modo fácil — menu interativo (recomendado)
 
 Sem decorar parâmetros: rode e escolha tudo por opções numeradas.

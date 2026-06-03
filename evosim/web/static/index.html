@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EvoSim — Evolução 3D</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🧬 EvoSim</h1>
+    <span class="sub">Evolução de locomoção biológica em 3D</span>
+  </header>
+
+  <main>
+    <!-- ===== Painel de controle ===== -->
+    <section class="painel">
+      <fieldset>
+        <legend>Treino</legend>
+        <label>Modo
+          <select id="modo">
+            <option value="novo">Novo (a partir de um preset)</option>
+            <option value="continuar">Continuar (a partir de um save)</option>
+          </select>
+        </label>
+        <label id="campo-preset">Criatura
+          <select id="preset"></select>
+        </label>
+        <label id="campo-save" style="display:none">Save de partida
+          <select id="save"></select>
+        </label>
+        <label>Otimizar (fitness)
+          <select id="fitness"></select>
+        </label>
+        <div class="dois">
+          <label>Algoritmo <select id="algoritmo"></select></label>
+          <label>Cérebro <select id="controlador"></select></label>
+        </div>
+        <div class="dois">
+          <label>Gerações <input id="geracoes" type="number" value="30" min="1"></label>
+          <label>População <input id="pop" type="number" value="24" min="2"></label>
+        </div>
+        <div class="dois">
+          <label>Duração (s) <input id="duracao" type="number" value="8" min="1" step="0.5"></label>
+          <label>Seed <input id="seed" type="number" value="1234" min="0"></label>
+        </div>
+        <label>Núcleos de CPU <input id="workers" type="number" value="0" min="0">
+          <small id="cpus-info"></small>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Ambiente (editável em tempo real)</legend>
+        <label>Gravidade Y: <b id="gy-val">-9.81</b>
+          <input id="gravY" type="range" min="-30" max="5" step="0.1" value="-9.81">
+        </label>
+        <label>Atrito do solo: <b id="fr-val">0.90</b>
+          <input id="friccao" type="range" min="0" max="1.5" step="0.05" value="0.9">
+        </label>
+        <label>Arrasto do ar: <b id="ar-val">0.02</b>
+          <input id="arrasto" type="range" min="0" max="1" step="0.01" value="0.02">
+        </label>
+        <p class="dica">No playback, mexer aqui re-simula o melhor indivíduo na hora.</p>
+      </fieldset>
+
+      <div class="botoes">
+        <button id="btn-iniciar" class="primario">▶ Iniciar</button>
+        <button id="btn-parar" disabled>■ Parar</button>
+        <button id="btn-salvar" disabled>💾 Salvar</button>
+      </div>
+      <div id="msg" class="msg"></div>
+    </section>
+
+    <!-- ===== Visualização ===== -->
+    <section class="visual">
+      <div class="status-bar">
+        <span id="status">parado</span>
+        <label class="vivo"><input id="ao-vivo" type="checkbox" checked> seguir treino ao vivo</label>
+      </div>
+      <canvas id="viewer" width="720" height="460"></canvas>
+      <canvas id="grafico" width="720" height="120"></canvas>
+      <p class="dica">Arraste no 3D para girar a câmera. Roda do mouse: zoom.</p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

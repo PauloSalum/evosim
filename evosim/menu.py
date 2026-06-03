@@ -272,6 +272,14 @@ def tela_caca() -> None:
         print(f"   💾 {pc}\n   💾 {pp}")
 
 
+def tela_web() -> None:
+    porta = _ler_int("Porta do servidor", 8000, 1)
+    print(f"\n   Abrindo a interface web em http://127.0.0.1:{porta}")
+    print("   (feche com Ctrl+C para voltar ao terminal)")
+    from .web import iniciar_servidor
+    iniciar_servidor(port=porta)
+
+
 def tela_listar() -> None:
     print("\nPresets:", ", ".join(listar_presets()))
     print("Fitness:", ", ".join(listar_fitness()))
@@ -285,6 +293,7 @@ def executar() -> None:
     print("  EvoSim — Evolução de Locomoção Biológica em 3D")
     print("=" * 60)
     acoes = [
+        ("Abrir interface WEB (3D no navegador) ★", tela_web),
         ("Evoluir uma nova criatura", tela_evoluir),
         ("Assistir um save (ASCII, no terminal)", tela_assistir),
         ("Assistir um save em 3D (matplotlib)", tela_assistir_3d),

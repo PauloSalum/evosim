@@ -236,5 +236,35 @@ class TestPersistencia(unittest.TestCase):
         self.assertEqual(len(rank), 2)
 
 
+class TestWeb(unittest.TestCase):
+    def test_frames_de_save_com_gravidade(self):
+        from evosim.web import sim_api
+        sim = ConfigSimulacao(duracao_segundos=2.0, seed=6)
+        s = rodar_evolucao_isolada("quadrupede", geracoes=2, sim=sim, tamanho_pop=6)
+        out = sim_api.frames_de_save(s, {"gravidade": [0, -3.0, 0]}, segundos=2.0)
+        self.assertGreater(len(out["frames"]), 0)
+        self.assertGreater(len(out["frames"][0]), 0)  # segmentos no 1º quadro
+        self.assertEqual(len(out["frames"][0][0]), 6)  # ax..bz
+
+    def test_gerenciador_ciclo(self):
+        import time
+        from evosim.web.manager import GerenciadorEvolucao
+        ger = GerenciadorEvolucao()
+        r = ger.iniciar({"modo": "novo", "preset": "tripode", "geracoes": 2,
+                         "pop": 4, "duracao": 1.5, "seed": 1, "workers": 1})
+        self.assertTrue(r["ok"])
+        for _ in range(60):
+            if not ger.status()["rodando"]:
+                break
+            time.sleep(0.5)
+        st = ger.status()
+        self.assertFalse(st["rodando"])
+        self.assertTrue(st["concluido"])
+        self.assertEqual(st["erro"], "")
+        # playback com outra gravidade a partir do melhor treinado.
+        pb = ger.playback({"gravidade": [0, -1.62, 0]}, segundos=1.5)
+        self.assertGreater(len(pb["frames"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
