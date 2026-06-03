@@ -7,6 +7,8 @@ cada indivíduo (passo de física + fitness), aplica seleção/mutação via o
 from __future__ import annotations
 
 import dataclasses
+import os
+from concurrent.futures import ProcessPoolExecutor
 from typing import Callable, List, Optional
 
 from ..aptidao.funcoes import obter_fitness
@@ -31,6 +33,7 @@ class Executor:
         fitness_nome: str = "velocidade",
         tipo_controlador: str = "cpg",
         eixo: Vec3 = Vec3(1.0, 0.0, 0.0),
+        n_workers: int = 1,
     ) -> None:
         self.dna = dna
         self.ambiente = ambiente
@@ -43,13 +46,46 @@ class Executor:
         self.algoritmo = algoritmo_factory(self.prototipo)
         self.historico: List[dict] = []
         self.populacao: List[Genoma] = []
+        # n_workers<=0 => usa todos os núcleos. A avaliação é determinística e
+        # independente, então o resultado é idêntico ao serial.
+        self.n_workers = n_workers if (n_workers and n_workers > 0) else (os.cpu_count() or 1)
+        self._pool: Optional[ProcessPoolExecutor] = None
 
     # ------------------------------------------------------------------
+    def _garantir_pool(self) -> Optional[ProcessPoolExecutor]:
+        if self.n_workers <= 1:
+            return None
+        if self._pool is None:
+            from .paralelo import _init_worker
+            self._pool = ProcessPoolExecutor(
+                max_workers=self.n_workers,
+                initializer=_init_worker,
+                initargs=(
+                    self.dna.to_dict(),
+                    dataclasses.asdict(self.ambiente),
+                    dataclasses.asdict(self.sim),
+                    self.avaliador.eixo.as_tuple(),
+                    self.fitness_nome,
+                ),
+            )
+        return self._pool
+
+    def _fechar_pool(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown()
+            self._pool = None
+
     def avaliar_populacao(self, pop: List[Genoma]) -> None:
-        for g in pop:
-            controlador = g.instanciar_controlador()
-            res = self.avaliador.avaliar_individuo(self.dna, controlador)
-            g.fitness = self.fitness(res)
+        pool = self._garantir_pool()
+        if pool is None:  # serial
+            for g in pop:
+                res = self.avaliador.avaliar_individuo(self.dna, g.instanciar_controlador())
+                g.fitness = self.fitness(res)
+            return
+        from .paralelo import _avaliar_spec
+        specs = [g.controlador_spec for g in pop]
+        for g, fit in zip(pop, pool.map(_avaliar_spec, specs)):
+            g.fitness = fit
 
     def melhor_atual(self) -> Optional[Genoma]:
         """Melhor genoma da população avaliada atual (para monitores ao vivo)."""
@@ -63,26 +99,29 @@ class Executor:
         callback: Optional[Callable[[int, dict], None]] = None,
         monitor: Optional[Callable[["Executor", int, dict], None]] = None,
     ) -> Save:
-        self.populacao = self.algoritmo.inicializar()
-        for ger in range(geracoes):
+        try:
+            self.populacao = self.algoritmo.inicializar()
+            for ger in range(geracoes):
+                self.avaliar_populacao(self.populacao)
+                fits = [g.fitness for g in self.populacao]
+                stats = {
+                    "geracao": ger,
+                    "melhor": max(fits),
+                    "media": mean(fits),
+                    "pior": min(fits),
+                }
+                self.historico.append(stats)
+                if callback:
+                    callback(ger, stats)
+                if monitor:  # ex.: Monitor3D — assistir o campeão enquanto treina.
+                    monitor(self, ger, stats)
+                self.populacao = self.algoritmo.proxima_geracao(self.populacao)
+            # avalia a última população para registrar o melhor final.
             self.avaliar_populacao(self.populacao)
-            fits = [g.fitness for g in self.populacao]
-            stats = {
-                "geracao": ger,
-                "melhor": max(fits),
-                "media": mean(fits),
-                "pior": min(fits),
-            }
-            self.historico.append(stats)
-            if callback:
-                callback(ger, stats)
-            if monitor:  # ex.: Monitor3D — assistir o campeão enquanto treina.
-                monitor(self, ger, stats)
-            self.populacao = self.algoritmo.proxima_geracao(self.populacao)
-        # avalia a última população para registrar o melhor final.
-        self.avaliar_populacao(self.populacao)
-        self.algoritmo._registrar_melhor(self.populacao)
-        return self.para_save()
+            self.algoritmo._registrar_melhor(self.populacao)
+            return self.para_save()
+        finally:
+            self._fechar_pool()
 
     # ------------------------------------------------------------------
     def melhores(self, k: int = 3) -> List[Genoma]:

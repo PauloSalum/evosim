@@ -23,6 +23,7 @@ def rodar_evolucao_isolada(
     seed: int = 1234,
     callback: Optional[Callable[[int, dict], None]] = None,
     monitor: Optional[Callable] = None,
+    n_workers: int = 1,
 ) -> Save:
     dna = criar_preset(especie) if isinstance(especie, str) else especie
     ambiente = ambiente or ConfigAmbiente()
@@ -31,5 +32,6 @@ def rodar_evolucao_isolada(
     executor = Executor(
         dna, ambiente, sim, factory,
         fitness_nome=fitness, tipo_controlador=tipo_controlador,
+        n_workers=n_workers,
     )
     return executor.evoluir(geracoes, callback=callback, monitor=monitor)

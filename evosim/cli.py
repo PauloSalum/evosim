@@ -63,6 +63,7 @@ def cmd_evoluir(args) -> None:
         fitness=args.fitness, algoritmo=args.algoritmo,
         tipo_controlador=args.controlador, tamanho_pop=args.pop,
         seed=args.seed, callback=_print_stats, monitor=monitor,
+        n_workers=args.workers,
     )
     if mon_obj is not None:
         mon_obj.fechar(manter_aberto=False)
@@ -152,6 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="janela 3D ao vivo do campeão a cada geração (matplotlib)")
     e.add_argument("--cada-ger", dest="cada_ger", type=int, default=1,
                    help="intervalo de gerações para atualizar a janela 3D")
+    e.add_argument("--workers", type=int, default=1,
+                   help="núcleos de CPU para o treino (0 = todos; 1 = serial)")
     e.set_defaults(func=cmd_evoluir)
 
     a = sub.add_parser("assistir", help="Reproduz um save em ASCII")

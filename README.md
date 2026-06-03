@@ -274,6 +274,24 @@ O `--render` nos modos `corrida`/`caca` desenha a ação no terminal ao vivo.
   evitando tremores irreais.
 * **Parâmetros do mundo imutáveis.** A evolução otimiza apenas o vetor de pesos
   do controlador, nunca as regras do ambiente.
+* **Atuadores fisicamente plausíveis.** Músculos são forças *internas*: não
+  deslocam o centro de massa (só gravidade e o solo, externos, deslocam) e têm
+  velocidade angular limitada. Há ainda um teto para a velocidade de subida do
+  corpo. Sem isso, a evolução "trapaceava" arremessando a criatura no ar.
+* **Treino paralelo e determinístico.** A avaliação da população roda em
+  múltiplos núcleos (`--workers 0` = todos), com resultado **idêntico** ao
+  serial — a simulação não usa aleatoriedade; o RNG vive só na evolução.
+  Em uma CPU de 4 núcleos, ~3,6× mais rápido.
+
+### Acelerar o treino (multi-core)
+
+```bash
+# Usa todos os núcleos da CPU (mesmo resultado, muito mais rápido):
+python -m evosim.cli evoluir --preset humanoide --geracoes 40 --workers 0 --saida runs/h.json
+```
+
+O menu interativo pergunta automaticamente se quer usar todos os núcleos.
+Tudo roda em **CPU** (não usa GPU).
 
 ### Rodar os testes
 ```bash

@@ -131,6 +131,10 @@ def tela_evoluir() -> None:
     pop = _ler_int("Tamanho da população", 32)
     duracao = _ler_float("Duração de cada teste (segundos simulados)", 10.0, 1.0)
     seed = _ler_int("Semente aleatória (reprodutibilidade)", 1234, 0)
+    n_workers = 1
+    n_cpus = os.cpu_count() or 1
+    if n_cpus > 1 and _sim_nao(f"Usar todos os {n_cpus} núcleos da CPU (treino mais rápido)?", True):
+        n_workers = 0  # 0 => todos os núcleos
 
     # Assistir em 3D ENQUANTO treina (mostra o campeão de cada geração).
     mon_obj = None
@@ -151,7 +155,7 @@ def tela_evoluir() -> None:
     save = rodar_evolucao_isolada(
         preset, geracoes=geracoes, sim=sim, fitness=fitness, algoritmo=algo,
         tipo_controlador=ctrl, tamanho_pop=pop, seed=seed, callback=_stats_cb,
-        monitor=monitor,
+        monitor=monitor, n_workers=n_workers,
     )
     if mon_obj is not None:
         mon_obj.fechar(manter_aberto=False)
