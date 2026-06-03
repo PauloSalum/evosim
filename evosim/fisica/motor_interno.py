@@ -66,6 +66,7 @@ class CorpoInterno(CorpoCriatura):
         self.nos: List[int] = []                  # todos os índices de nós
         self.nos_pe: List[List[int]] = []         # nós de cada segmento-pé
         self.nos_proibidos: List[int] = []        # nós de segmentos proibidos
+        self.pe_set: set = set()                  # todos os nós que são "pé"
         self.idx_core_prox: int = 0
         self.idx_core_distal: int = 0
         self.idx_core_up: int = 0
@@ -120,6 +121,16 @@ class CorpoInterno(CorpoCriatura):
         p = self.motor.pos
         chao = self.motor.ambiente.altura_solo + _CONTATO_EPS
         return any(p[n].y <= chao for n in self.nos_proibidos)
+
+    def parte_nao_pe_no_solo(self) -> bool:
+        p = self.motor.pos
+        chao = self.motor.ambiente.altura_solo + _CONTATO_EPS
+        for n in self.nos:
+            if n in self.pe_set:
+                continue
+            if p[n].y <= chao:
+                return True
+        return False
 
     def energia_acumulada(self) -> float:
         return self._energia
@@ -188,6 +199,7 @@ class MotorInterno(MotorFisica):
 
         construir_seg(raiz, base)
         corpo.idx_core_distal = no_distal[raiz.id]
+        corpo.pe_set = {n for grupo in corpo.nos_pe for n in grupo}
 
         # Nó de referência "up" rígido no core (para giroscópio/equilíbrio).
         meio_core = (self.pos[corpo.idx_core_prox] + self.pos[corpo.idx_core_distal]) * 0.5

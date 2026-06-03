@@ -99,6 +99,14 @@ class Avaliador:
             if cm.y < sim.altura_critica:
                 res.terminou_cedo, res.motivo = True, "caiu"
                 break
+            # capotou / deu cambalhota (tronco virado de cabeça para baixo).
+            if criatura.corpo.vetor_up_core().y < sim.up_minimo_capotar:
+                res.terminou_cedo, res.motivo = True, "capotou"
+                break
+            # só os pés podem tocar o solo ("se jogar machuca").
+            if sim.apenas_pes_no_solo and criatura.corpo.parte_nao_pe_no_solo():
+                res.terminou_cedo, res.motivo = True, "contato_indevido"
+                break
             if sim.proibe_contato_cabeca and criatura.corpo.parte_proibida_no_solo():
                 res.terminou_cedo, res.motivo = True, "cabeca_no_solo"
                 break

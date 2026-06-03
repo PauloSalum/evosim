@@ -33,6 +33,13 @@ class AlgoritmoEvolutivo(abc.ABC):
         self.rng = make_rng(seed)
         self.geracao = 0
         self.melhor: Genoma | None = None
+        # Vetor de pesos para "warm-start": continuar a evolução a partir de um
+        # indivíduo já treinado (a população inicial nasce ao redor dele).
+        self.semente: List[float] | None = None
+
+    def semear(self, vetor: List[float]) -> None:
+        """Define o ponto de partida da evolução (continuar de um save)."""
+        self.semente = list(vetor)
 
     def _registrar_melhor(self, pop: List[Genoma]) -> None:
         cand = max(pop, key=lambda g: g.fitness)
@@ -67,9 +74,15 @@ class AlgoritmoGenetico(AlgoritmoEvolutivo):
         self.sigma_init = sigma_init
 
     def inicializar(self) -> List[Genoma]:
-        pop = []
-        for _ in range(self.tamanho_pop):
-            vetor = [self.rng.gauss(0.0, self.sigma_init) for _ in range(self.n)]
+        pop: List[Genoma] = []
+        if self.semente is not None:  # mantém o indivíduo de partida intacto.
+            pop.append(Genoma.de_vetor(self.template, self.semente, self.geracao))
+        while len(pop) < self.tamanho_pop:
+            if self.semente is not None:  # variações ao redor do save.
+                vetor = [self.semente[i] + self.rng.gauss(0.0, self.forca_mutacao)
+                         for i in range(self.n)]
+            else:
+                vetor = [self.rng.gauss(0.0, self.sigma_init) for _ in range(self.n)]
             pop.append(Genoma.de_vetor(self.template, vetor, self.geracao))
         return pop
 
@@ -124,6 +137,11 @@ class EstrategiaEvolutiva(AlgoritmoEvolutivo):
         ws = [math.log(self.mu + 0.5) - math.log(i + 1) for i in range(self.mu)]
         soma = sum(ws)
         self.w = [w / soma for w in ws]
+
+    def semear(self, vetor: List[float]) -> None:
+        # Continuar de um save: a busca recomeça centrada no indivíduo treinado.
+        super().semear(vetor)
+        self.media = list(vetor)
 
     def _amostrar(self) -> List[float]:
         return [self.media[i] + self.sigma * self.rng.gauss(0.0, 1.0)

@@ -34,6 +34,7 @@ class Executor:
         tipo_controlador: str = "cpg",
         eixo: Vec3 = Vec3(1.0, 0.0, 0.0),
         n_workers: int = 1,
+        genoma_inicial: Optional[Genoma] = None,
     ) -> None:
         self.dna = dna
         self.ambiente = ambiente
@@ -41,9 +42,16 @@ class Executor:
         self.fitness_nome = fitness_nome
         self.fitness = obter_fitness(fitness_nome)
         self.avaliador = Avaliador(ambiente, sim, eixo=eixo)
-        n_in, n_out = self.avaliador.dimensoes_controlador(dna)
-        self.prototipo = criar_controlador(tipo_controlador, n_in, n_out, seed=sim.seed)
+        if genoma_inicial is not None:
+            # Continuar de um save: usa a MESMA arquitetura/pesos como protótipo
+            # e semeia a busca ao redor desse indivíduo.
+            self.prototipo = genoma_inicial.instanciar_controlador()
+        else:
+            n_in, n_out = self.avaliador.dimensoes_controlador(dna)
+            self.prototipo = criar_controlador(tipo_controlador, n_in, n_out, seed=sim.seed)
         self.algoritmo = algoritmo_factory(self.prototipo)
+        if genoma_inicial is not None:
+            self.algoritmo.semear(genoma_inicial.pesos)
         self.historico: List[dict] = []
         self.populacao: List[Genoma] = []
         # n_workers<=0 => usa todos os núcleos. A avaliação é determinística e

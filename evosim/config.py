@@ -56,6 +56,12 @@ class ConfigSimulacao:
     janela_aquecimento: float = 2.0     # tempo antes de checar deslocamento.
     deslocamento_minimo: float = 0.25   # se não andar isso após aquecimento, aborta.
     proibe_contato_cabeca: bool = True  # cabeça tocar o chão aborta.
+    # Só os pés podem tocar o solo: qualquer outra parte encostando aborta
+    # ("se jogar machuca"). Evita rastejar/usar o corpo como apoio.
+    apenas_pes_no_solo: bool = True
+    # Penaliza cambalhotas/capotamento: se o "para cima" do tronco cair abaixo
+    # deste valor (criatura virando de cabeça para baixo), aborta.
+    up_minimo_capotar: float = -0.2
     seed: int = 1234
 
     @property

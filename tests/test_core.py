@@ -157,6 +157,39 @@ class TestEvolucao(unittest.TestCase):
             self.assertTrue(s.melhores)
 
 
+class TestWarmStart(unittest.TestCase):
+    def test_continuar_de_save(self):
+        from evosim.modos.evolucao_isolada import continuar_evolucao
+        sim = ConfigSimulacao(duracao_segundos=2.0, seed=8)
+        s1 = rodar_evolucao_isolada("quadrupede", geracoes=2, sim=sim, tamanho_pop=6)
+        s2 = continuar_evolucao(s1, geracoes=2, sim=sim, tamanho_pop=6)
+        self.assertTrue(s2.melhores)
+        # arquitetura preservada entre o save e a continuação.
+        self.assertEqual(s2.melhor_genoma().num_pesos(), s1.melhor_genoma().num_pesos())
+
+
+class TestRealismo(unittest.TestCase):
+    def test_detecta_contato_indevido(self):
+        amb = ConfigAmbiente()
+        motor = MotorInterno(amb)
+        corpo = motor.construir_criatura(criar_preset("humanoide"), Vec3())
+        self.assertFalse(corpo.parte_nao_pe_no_solo())
+        # força o tronco (core) ao chão -> deve acusar contato indevido.
+        motor.pos[corpo.idx_core_prox] = Vec3(0.0, 0.0, 0.0)
+        self.assertTrue(corpo.parte_nao_pe_no_solo())
+
+    def test_capotamento_termina_episodio(self):
+        from evosim.simulacao.avaliador import Avaliador
+        amb = ConfigAmbiente()
+        sim = ConfigSimulacao(duracao_segundos=4.0, up_minimo_capotar=2.0)  # impossível
+        dna = criar_preset("humanoide")
+        av = Avaliador(amb, sim)
+        ctrl = criar_controlador("cpg", *av.dimensoes_controlador(dna))
+        res = av.avaliar_individuo(dna, ctrl)
+        self.assertTrue(res.terminou_cedo)
+        self.assertEqual(res.motivo, "capotou")
+
+
 class TestParadaPrecoce(unittest.TestCase):
     def test_aborta_quando_cai(self):
         from evosim.simulacao.avaliador import Avaliador

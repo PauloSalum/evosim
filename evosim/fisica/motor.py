@@ -70,6 +70,10 @@ class CorpoCriatura(abc.ABC):
     def parte_proibida_no_solo(self) -> bool:
         """True se um segmento proibido (ex.: cabeça) tocou o solo."""
 
+    def parte_nao_pe_no_solo(self) -> bool:
+        """True se QUALQUER segmento que não seja um pé tocou o solo."""
+        return False
+
     # --- energia ------------------------------------------------------
     @abc.abstractmethod
     def energia_acumulada(self) -> float:

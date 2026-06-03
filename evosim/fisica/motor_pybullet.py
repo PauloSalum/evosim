@@ -142,6 +142,15 @@ class CorpoPyBullet(CorpoCriatura):
                 return True
         return False
 
+    def parte_nao_pe_no_solo(self) -> bool:
+        pes = set(self.pes)
+        for body in self.bodies.values():
+            if body in pes:
+                continue
+            if self.p.getContactPoints(bodyA=body, bodyB=self.motor.solo):
+                return True
+        return False
+
     def energia_acumulada(self) -> float:
         return self._energia
 
