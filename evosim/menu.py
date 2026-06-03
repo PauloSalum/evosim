@@ -172,6 +172,63 @@ def tela_evoluir() -> None:
             _assistir(caminho)
 
 
+def tela_continuar() -> None:
+    from .modos.evolucao_isolada import continuar_evolucao
+    from .persistencia.serializacao import salvar
+
+    caminho = _selecionar_save("Continuar a evolução de qual save?")
+    if not caminho:
+        return
+    save = carregar(caminho)
+    print(f"   preset: {save.preset} | fitness original: {save.fitness_nome}")
+    geracoes = _ler_int("Número de gerações", 30)
+    pop = _ler_int("Tamanho da população", 32)
+    duracao = _ler_float("Duração de cada teste (s)", 10.0, 1.0)
+    seed = _ler_int("Semente", 1234, 0)
+
+    # gravidade opcional (ex.: continuar o mesmo bicho na Lua).
+    ambiente = None
+    gy = _ler("Gravidade Y (Enter = manter a do save)", "")
+    if gy:
+        base = dict(save.ambiente) if save.ambiente else ConfigAmbiente().__dict__
+        g = list(base.get("gravidade", [0.0, -9.81, 0.0])); g[1] = float(gy)
+        validos = ConfigAmbiente().__dict__.keys()
+        ambiente = ConfigAmbiente(**{k: v for k, v in {**base, "gravidade": g}.items()
+                                     if k in validos})
+
+    n_workers = 1
+    n_cpus = os.cpu_count() or 1
+    if n_cpus > 1 and _sim_nao(f"Usar todos os {n_cpus} núcleos da CPU?", True):
+        n_workers = 0
+
+    mon_obj = None
+    monitor = None
+    if _sim_nao("Assistir em 3D durante o treino? (precisa de matplotlib)", False):
+        try:
+            from .render.matplotlib_view import Monitor3D
+            mon_obj = Monitor3D()
+            monitor = mon_obj.callback
+        except Exception as e:
+            print(f"   ⚠ {e}")
+
+    print(f"\n▶ Continuando '{save.preset}' por {geracoes} gerações (warm-start)\n")
+    sim = ConfigSimulacao(seed=seed, duracao_segundos=duracao)
+    novo = continuar_evolucao(
+        save, geracoes=geracoes, ambiente=ambiente, sim=sim, tamanho_pop=pop,
+        seed=seed, callback=_stats_cb, monitor=monitor, n_workers=n_workers,
+    )
+    if mon_obj is not None:
+        mon_obj.fechar(manter_aberto=False)
+    print(f"\n✔ Concluído! Melhor fitness = {novo.melhores[0]['fitness']:.3f}")
+    if _sim_nao(f"Salvar (sobrescrever {caminho})?", True):
+        dest = _ler("Caminho do arquivo", caminho) or caminho
+        os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+        salvar(novo, dest)
+        print(f"   💾 salvo em {dest}")
+        if _sim_nao("Assistir o vencedor agora (ASCII)?", True):
+            _assistir(dest)
+
+
 def _assistir(caminho: str, plano: str = "xy") -> None:
     from .criaturas.criatura import Criatura
     from .fisica.motor_interno import MotorInterno
@@ -295,6 +352,7 @@ def executar() -> None:
     acoes = [
         ("Abrir interface WEB (3D no navegador) ★", tela_web),
         ("Evoluir uma nova criatura", tela_evoluir),
+        ("Continuar evolução de um save (warm-start)", tela_continuar),
         ("Assistir um save (ASCII, no terminal)", tela_assistir),
         ("Assistir um save em 3D (matplotlib)", tela_assistir_3d),
         ("Corrida entre saves (sandbox)", tela_corrida),

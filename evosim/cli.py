@@ -22,7 +22,7 @@ from .fisica.motor_interno import MotorInterno
 from .mathutils import Vec3
 from .modos.caca_cacador import CoEvolucao
 from .modos.corrida import Competidor, rodar_corrida
-from .modos.evolucao_isolada import rodar_evolucao_isolada
+from .modos.evolucao_isolada import continuar_evolucao, rodar_evolucao_isolada
 from .persistencia.serializacao import carregar, salvar
 from .render.ascii import assistir_terminal
 
@@ -80,6 +80,42 @@ def cmd_evoluir(args) -> None:
               f"(melhor fitness={save.melhores[0]['fitness']:.3f})")
     if args.render:
         _assistir_ascii(save)
+
+
+def cmd_continuar(args) -> None:
+    save = carregar(args.save)
+    print(f"Continuando '{save.preset}' a partir de {args.save} "
+          f"por {args.geracoes} gerações (warm-start)")
+    sim = ConfigSimulacao(seed=args.seed, duracao_segundos=args.duracao)
+    # opcionalmente troca a gravidade Y (mantém o resto do ambiente do save).
+    ambiente = None
+    if args.gravidade_y is not None:
+        base = dict(save.ambiente) if save.ambiente else ConfigAmbiente().__dict__
+        g = list(base.get("gravidade", [0.0, -9.81, 0.0]))
+        g[1] = args.gravidade_y
+        base = {**base, "gravidade": g}
+        validos = ConfigAmbiente().__dict__.keys()
+        ambiente = ConfigAmbiente(**{k: v for k, v in base.items() if k in validos})
+    mon_obj = None
+    monitor = None
+    if args.assistir3d:
+        from .render.matplotlib_view import Monitor3D
+        mon_obj = Monitor3D(cada_geracao=args.cada_ger)
+        monitor = mon_obj.callback
+    novo = continuar_evolucao(
+        save, geracoes=args.geracoes, ambiente=ambiente, sim=sim,
+        fitness=(args.fitness or None), algoritmo=args.algoritmo,
+        tamanho_pop=args.pop, seed=args.seed, callback=_print_stats,
+        monitor=monitor, n_workers=args.workers,
+    )
+    if mon_obj is not None:
+        mon_obj.fechar(manter_aberto=False)
+    saida = args.saida or args.save  # por padrão, sobrescreve o próprio save.
+    os.makedirs(os.path.dirname(saida) or ".", exist_ok=True)
+    salvar(novo, saida)
+    print(f"Save escrito em {saida} (melhor fitness={novo.melhores[0]['fitness']:.3f})")
+    if args.render:
+        _assistir_ascii(novo)
 
 
 def cmd_assistir(args) -> None:
@@ -169,6 +205,27 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--workers", type=int, default=1,
                    help="núcleos de CPU para o treino (0 = todos; 1 = serial)")
     e.set_defaults(func=cmd_evoluir)
+
+    c = sub.add_parser("continuar",
+                       help="Continua a evolução a partir de um save (warm-start)")
+    c.add_argument("--save", required=True, help="save de partida")
+    c.add_argument("--geracoes", type=int, default=20)
+    c.add_argument("--fitness", default="", choices=[""] + listar_fitness(),
+                   help="por padrão, mantém a fitness do save")
+    c.add_argument("--algoritmo", default="es")
+    c.add_argument("--pop", type=int, default=32)
+    c.add_argument("--duracao", type=float, default=10.0)
+    c.add_argument("--seed", type=int, default=1234)
+    c.add_argument("--gravidade-y", dest="gravidade_y", type=float, default=None,
+                   help="opcional: continua sob outra gravidade Y (ex.: -1.62 Lua)")
+    c.add_argument("--saida", default="",
+                   help="onde salvar (padrão: sobrescreve o próprio save)")
+    c.add_argument("--render", action="store_true")
+    c.add_argument("--assistir3d", action="store_true")
+    c.add_argument("--cada-ger", dest="cada_ger", type=int, default=1)
+    c.add_argument("--workers", type=int, default=1,
+                   help="núcleos de CPU (0 = todos; 1 = serial)")
+    c.set_defaults(func=cmd_continuar)
 
     a = sub.add_parser("assistir", help="Reproduz um save em ASCII")
     a.add_argument("--save", required=True)

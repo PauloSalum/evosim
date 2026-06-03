@@ -183,6 +183,11 @@ dos limites do preset). Gravidade, arrasto e solo **nunca** mudam.
 # (a) Evolução isolada — uma espécie evolui sozinha.
 python -m evosim.cli evoluir --preset hexapode --geracoes 40 --saida runs/hex.json
 
+# (a2) Continuar a evolução a partir de um save (warm-start). Por padrão
+#      sobrescreve o próprio save; pode trocar a gravidade Y (ex.: Lua).
+python -m evosim.cli continuar --save runs/hex.json --geracoes 40
+python -m evosim.cli continuar --save runs/hex.json --geracoes 20 --gravidade-y -1.62
+
 # (b) Corrida (sandbox) — carrega SAVES INDEPENDENTES e os coloca para competir.
 python -m evosim.cli corrida --saves runs/humanoide.json runs/hex.json --render
 
