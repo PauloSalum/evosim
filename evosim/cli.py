@@ -52,12 +52,20 @@ def cmd_evoluir(args) -> None:
     print(f"Evoluindo '{args.preset}' por {args.geracoes} gerações "
           f"[fitness={args.fitness}, algo={args.algoritmo}, ctrl={args.controlador}]")
     sim = ConfigSimulacao(seed=args.seed, duracao_segundos=args.duracao)
+    mon_obj = None
+    monitor = None
+    if args.assistir3d:  # janela 3D ao vivo com o campeão de cada geração.
+        from .render.matplotlib_view import Monitor3D
+        mon_obj = Monitor3D(cada_geracao=args.cada_ger)
+        monitor = mon_obj.callback
     save = rodar_evolucao_isolada(
         args.preset, geracoes=args.geracoes, sim=sim,
         fitness=args.fitness, algoritmo=args.algoritmo,
         tipo_controlador=args.controlador, tamanho_pop=args.pop,
-        seed=args.seed, callback=_print_stats,
+        seed=args.seed, callback=_print_stats, monitor=monitor,
     )
+    if mon_obj is not None:
+        mon_obj.fechar(manter_aberto=False)
     if args.saida:
         os.makedirs(os.path.dirname(args.saida) or ".", exist_ok=True)
         salvar(save, args.saida)
@@ -70,6 +78,12 @@ def cmd_evoluir(args) -> None:
 def cmd_assistir(args) -> None:
     save = carregar(args.save)
     _assistir_ascii(save, plano=args.plano)
+
+
+def cmd_assistir3d(args) -> None:
+    from .render.matplotlib_view import reproduzir_save
+    reproduzir_save(carregar(args.save), gif=args.gif or None,
+                    fps=args.fps, mostrar=not args.so_gif)
 
 
 def _assistir_ascii(save, plano: str = "xy") -> None:
@@ -132,13 +146,26 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--duracao", type=float, default=10.0)
     e.add_argument("--seed", type=int, default=1234)
     e.add_argument("--saida", default="")
-    e.add_argument("--render", action="store_true")
+    e.add_argument("--render", action="store_true",
+                   help="assistir o vencedor em ASCII ao final")
+    e.add_argument("--assistir3d", action="store_true",
+                   help="janela 3D ao vivo do campeão a cada geração (matplotlib)")
+    e.add_argument("--cada-ger", dest="cada_ger", type=int, default=1,
+                   help="intervalo de gerações para atualizar a janela 3D")
     e.set_defaults(func=cmd_evoluir)
 
     a = sub.add_parser("assistir", help="Reproduz um save em ASCII")
     a.add_argument("--save", required=True)
     a.add_argument("--plano", default="xy", choices=["xy", "xz", "zy"])
     a.set_defaults(func=cmd_assistir)
+
+    a3 = sub.add_parser("assistir3d", help="Reproduz um save em 3D (matplotlib)")
+    a3.add_argument("--save", required=True)
+    a3.add_argument("--gif", default="", help="caminho para exportar um GIF")
+    a3.add_argument("--fps", type=int, default=30)
+    a3.add_argument("--so-gif", dest="so_gif", action="store_true",
+                    help="apenas exporta o GIF, sem abrir janela")
+    a3.set_defaults(func=cmd_assistir3d)
 
     c = sub.add_parser("corrida", help="Modo Corrida (Sandbox)")
     c.add_argument("--saves", nargs="+", required=True)

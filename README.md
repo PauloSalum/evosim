@@ -228,23 +228,34 @@ juntas no Modo Corrida ou Caça (`Competidor.de_save`).
 
 ## 6. Renderização
 
-Três níveis, do mais simples ao mais fiel:
+Todas as opções abaixo (exceto PyBullet) usam o **mesmo motor do treino**
+(`MotorInterno`), então mostram o comportamento fiel ao que foi evoluído.
 
 ```bash
-# ASCII (qualquer terminal, sem dependências):
+# 1) ASCII (qualquer terminal, sem dependências):
 python -m evosim.cli assistir --save runs/humanoide.json --plano xy
 
-# GIF 3D leve (matplotlib):  ver evosim/render/matplotlib_view.py
-pip install matplotlib
+# 2) 3D com matplotlib — assiste o melhor de um save (e opcional GIF):
+pip install matplotlib pillow
+python -m evosim.cli assistir3d --save runs/humanoide.json
+python -m evosim.cli assistir3d --save runs/humanoide.json --gif h.gif --so-gif
 
-# GUI 3D em tempo real (PyBullet):
+# 3) Assistir em 3D ENQUANTO TREINA (campeão de cada geração, ao vivo):
+python -m evosim.cli evoluir --preset humanoide --geracoes 30 --assistir3d --saida runs/h.json
+
+# 4) GUI 3D interativa (PyBullet) — atenção: roda em OUTRO motor de física,
+#    então o movimento difere do treino:
 pip install pybullet
 python -c "from evosim.persistencia.serializacao import carregar; \
            from evosim.render.pybullet_view import assistir_save_3d; \
            assistir_save_3d(carregar('runs/humanoide.json'))"
 ```
 
+No menu interativo (`python -m evosim`), o fluxo "Evoluir" pergunta se você quer
+**assistir em 3D durante o treino**, e há a opção "Assistir um save em 3D".
 O `--render` nos modos `corrida`/`caca` desenha a ação no terminal ao vivo.
+
+> Tudo roda em **CPU** (pure-Python, determinístico). Nada usa GPU.
 
 ---
 

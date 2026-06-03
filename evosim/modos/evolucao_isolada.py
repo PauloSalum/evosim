@@ -22,6 +22,7 @@ def rodar_evolucao_isolada(
     tamanho_pop: int = 32,
     seed: int = 1234,
     callback: Optional[Callable[[int, dict], None]] = None,
+    monitor: Optional[Callable] = None,
 ) -> Save:
     dna = criar_preset(especie) if isinstance(especie, str) else especie
     ambiente = ambiente or ConfigAmbiente()
@@ -31,4 +32,4 @@ def rodar_evolucao_isolada(
         dna, ambiente, sim, factory,
         fitness_nome=fitness, tipo_controlador=tipo_controlador,
     )
-    return executor.evoluir(geracoes, callback=callback)
+    return executor.evoluir(geracoes, callback=callback, monitor=monitor)

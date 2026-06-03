@@ -132,13 +132,29 @@ def tela_evoluir() -> None:
     duracao = _ler_float("Duração de cada teste (segundos simulados)", 10.0, 1.0)
     seed = _ler_int("Semente aleatória (reprodutibilidade)", 1234, 0)
 
+    # Assistir em 3D ENQUANTO treina (mostra o campeão de cada geração).
+    mon_obj = None
+    monitor = None
+    if _sim_nao("Assistir em 3D durante o treino? (precisa de matplotlib)", False):
+        intervalo = _ler_int("Mostrar a cada quantas gerações?", 1)
+        try:
+            from .render.matplotlib_view import Monitor3D
+            mon_obj = Monitor3D(cada_geracao=intervalo)
+            monitor = mon_obj.callback
+        except Exception as e:
+            print(f"   ⚠ não foi possível abrir a janela 3D ({e}). "
+                  "Sigo o treino sem visualização.")
+
     print(f"\n▶ Evoluindo '{preset}' | fitness={fitness} | algo={algo} | "
           f"cérebro={ctrl} | {geracoes} gerações × {pop} indivíduos\n")
     sim = ConfigSimulacao(seed=seed, duracao_segundos=duracao)
     save = rodar_evolucao_isolada(
         preset, geracoes=geracoes, sim=sim, fitness=fitness, algoritmo=algo,
         tipo_controlador=ctrl, tamanho_pop=pop, seed=seed, callback=_stats_cb,
+        monitor=monitor,
     )
+    if mon_obj is not None:
+        mon_obj.fechar(manter_aberto=False)
     melhor = save.melhores[0]["fitness"]
     print(f"\n✔ Concluído! Melhor fitness = {melhor:.3f}")
 
@@ -179,6 +195,21 @@ def tela_assistir() -> None:
     planos = ["xy (lateral)", "xz (de cima)", "zy (de frente)"]
     plano = ["xy", "xz", "zy"][_escolher("Ângulo de câmera?", planos)]
     _assistir(caminho, plano)
+
+
+def tela_assistir_3d() -> None:
+    caminho = _selecionar_save("Qual save assistir em 3D?")
+    if not caminho:
+        return
+    gif = None
+    if _sim_nao("Exportar também um GIF?", False):
+        gif = _ler("Caminho do GIF", "evolucao.gif") or "evolucao.gif"
+    try:
+        from .render.matplotlib_view import reproduzir_save
+        print("   abrindo janela 3D (feche a janela para voltar)...")
+        reproduzir_save(carregar(caminho), gif=gif, mostrar=True)
+    except Exception as e:
+        print(f"   ⚠ {e}")
 
 
 def tela_corrida() -> None:
@@ -251,7 +282,8 @@ def executar() -> None:
     print("=" * 60)
     acoes = [
         ("Evoluir uma nova criatura", tela_evoluir),
-        ("Assistir um save treinado", tela_assistir),
+        ("Assistir um save (ASCII, no terminal)", tela_assistir),
+        ("Assistir um save em 3D (matplotlib)", tela_assistir_3d),
         ("Corrida entre saves (sandbox)", tela_corrida),
         ("Caça e Caçador (co-evolução)", tela_caca),
         ("Listar opções disponíveis", tela_listar),

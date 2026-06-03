@@ -51,10 +51,17 @@ class Executor:
             res = self.avaliador.avaliar_individuo(self.dna, controlador)
             g.fitness = self.fitness(res)
 
+    def melhor_atual(self) -> Optional[Genoma]:
+        """Melhor genoma da população avaliada atual (para monitores ao vivo)."""
+        if not self.populacao:
+            return None
+        return max(self.populacao, key=lambda g: g.fitness)
+
     def evoluir(
         self,
         geracoes: int,
         callback: Optional[Callable[[int, dict], None]] = None,
+        monitor: Optional[Callable[["Executor", int, dict], None]] = None,
     ) -> Save:
         self.populacao = self.algoritmo.inicializar()
         for ger in range(geracoes):
@@ -69,6 +76,8 @@ class Executor:
             self.historico.append(stats)
             if callback:
                 callback(ger, stats)
+            if monitor:  # ex.: Monitor3D — assistir o campeão enquanto treina.
+                monitor(self, ger, stats)
             self.populacao = self.algoritmo.proxima_geracao(self.populacao)
         # avalia a última população para registrar o melhor final.
         self.avaliar_populacao(self.populacao)
