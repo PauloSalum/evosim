@@ -29,6 +29,8 @@ select, input[type=number] {
 input[type=range] { width: 100%; margin-top: 6px; }
 .dois { display: flex; gap: 10px; }
 .dois label { flex: 1; }
+label.inline { display: flex; align-items: center; gap: 6px; }
+label.inline input { width: auto; margin: 0; }
 small { color: #8b949e; }
 .dica { color: #8b949e; font-size: 12px; margin: 6px 0 0; }
 

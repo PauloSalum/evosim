@@ -9,6 +9,7 @@ visualizador 3D ao vivo), e suporta:
 """
 from __future__ import annotations
 
+import os
 import threading
 from typing import Optional
 
@@ -48,6 +49,9 @@ class GerenciadorEvolucao:
         self.ambiente_atual: dict = ConfigAmbiente().__dict__.copy()
         self.erro = ""
         self.concluido = False
+        self.autosave_path = ""
+        self.autosave_geracao = -1
+        self.ilimitado = False
 
     # ------------------------------------------------------------------
     def status(self) -> dict:
@@ -60,6 +64,9 @@ class GerenciadorEvolucao:
                 "historico": list(self.historico),
                 "erro": self.erro,
                 "ambiente": self.ambiente_atual,
+                "autosave": self.autosave_path,
+                "autosave_geracao": self.autosave_geracao,
+                "ilimitado": self.ilimitado,
                 "tem_melhor": self.executor is not None
                 and self.executor.melhor_atual() is not None,
             }
@@ -105,12 +112,13 @@ class GerenciadorEvolucao:
                 duracao_segundos=float(params.get("duracao", 8.0)),
             )
             modo = params.get("modo", "novo")
-            geracoes = int(params.get("geracoes", 20))
+            geracoes = int(params.get("geracoes", 0))  # 0 => ilimitado
             pop = int(params.get("pop", 24))
             workers = int(params.get("workers", 0))
             algoritmo = params.get("algoritmo", "es")
             fitness = params.get("fitness", "velocidade")
             controlador = params.get("controlador", "cpg")
+            autosave_cada = max(1, int(params.get("autosave_cada", 1)))
             genoma_inicial = None
 
             if modo == "continuar":
@@ -123,9 +131,17 @@ class GerenciadorEvolucao:
                 preset = params["preset"]
                 dna = criar_preset(preset)
 
+            # caminho do checkpoint (auto-save a cada geração).
+            autosave = params.get("autosave") or f"runs/{preset}_auto.json"
+            os.makedirs(os.path.dirname(autosave) or ".", exist_ok=True)
+
             with self._lock:
                 self.preset = preset
                 self.ambiente_atual = ambiente.__dict__.copy()
+                self.autosave_path = autosave
+                self.autosave_cada = autosave_cada
+                self.autosave_geracao = -1
+                self.ilimitado = geracoes <= 0
 
             factory = criar_algoritmo(algoritmo, tamanho_pop=pop, seed=sim.seed)
             executor = Executor(
@@ -154,6 +170,17 @@ class GerenciadorEvolucao:
         with self._lock:
             self.geracao = ger
             self.historico.append(stats)
+            cada = getattr(self, "autosave_cada", 1)
+            caminho = self.autosave_path
+            ex = self.executor
+        # checkpoint: salva o melhor-até-agora a cada N gerações, fora do lock.
+        if caminho and ex is not None and ger % cada == 0:
+            try:
+                salvar(ex.para_save(), caminho)
+                with self._lock:
+                    self.autosave_geracao = ger
+            except Exception:
+                pass
 
     def _on_monitor(self, executor: Executor, ger: int, stats: dict) -> None:
         # gera os frames do campeão desta geração (clip curto p/ visualização).

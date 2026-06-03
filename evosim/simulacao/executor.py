@@ -7,6 +7,7 @@ cada indivíduo (passo de física + fitness), aplica seleção/mutação via o
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import os
 from concurrent.futures import ProcessPoolExecutor
 from typing import Callable, List, Optional
@@ -107,9 +108,12 @@ class Executor:
         callback: Optional[Callable[[int, dict], None]] = None,
         monitor: Optional[Callable[["Executor", int, dict], None]] = None,
     ) -> Save:
+        # geracoes <= 0 => ilimitado: roda até um parar cooperativo (o monitor
+        # levanta uma exceção) ou KeyboardInterrupt.
+        ger_iter = itertools.count() if geracoes <= 0 else range(geracoes)
         try:
             self.populacao = self.algoritmo.inicializar()
-            for ger in range(geracoes):
+            for ger in ger_iter:
                 self.avaliar_populacao(self.populacao)
                 fits = [g.fitness for g in self.populacao]
                 stats = {

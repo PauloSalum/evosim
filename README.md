@@ -84,8 +84,10 @@ python -m evosim.cli web          # abre http://localhost:8000
 
 Na web você pode:
 * **Evoluir do zero** (escolhendo preset, fitness, algoritmo, cérebro, núcleos…);
+* **Treinar sem limite de gerações** ("rodar até eu parar"), com **auto-save a
+  cada geração** (checkpoint) — pare quando quiser, sem perder progresso;
 * **Continuar a evolução a partir de um save** (warm-start) — "chegou no ponto,
-  agora evolui outro / continua esse";
+  agora evolui outro / continua esse" (o checkpoint serve de ponto de retomada);
 * **Mudar a gravidade (e atrito/arrasto) em tempo real** — os sliders
   re-simulam o melhor indivíduo na hora;
 * **Assistir o campeão de cada geração em 3D enquanto treina**, com gráfico de

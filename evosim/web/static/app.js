@@ -33,7 +33,8 @@ function params() {
     fitness: $("fitness").value,
     algoritmo: $("algoritmo").value,
     controlador: $("controlador").value,
-    geracoes: +$("geracoes").value,
+    geracoes: $("infinito").checked ? 0 : +$("geracoes").value,  // 0 = sem limite
+    autosave: $("autosave").value.trim(),
     pop: +$("pop").value,
     duracao: +$("duracao").value,
     seed: +$("seed").value,
@@ -193,10 +194,13 @@ async function loopStatus() {
   $("btn-iniciar").disabled = st.rodando;
   $("btn-parar").disabled = !st.rodando;
   $("btn-salvar").disabled = !st.tem_melhor;
-  let txt = st.rodando ? `treinando — geração ${st.geracao}` :
-            (st.concluido ? "concluído" : "parado");
+  let txt = st.rodando
+    ? `treinando — geração ${st.geracao}${st.ilimitado ? " (sem limite)" : ""}`
+    : (st.concluido ? "parado/concluído" : "parado");
   const ult = st.historico[st.historico.length - 1];
   if (ult) txt += ` | melhor fitness: ${ult.melhor.toFixed(2)}`;
+  if (st.autosave && st.autosave_geracao >= 0)
+    txt += ` | 💾 ${st.autosave} (ger ${st.autosave_geracao})`;
   if (st.erro) { txt = "erro: " + st.erro; $("msg").textContent = st.erro; }
   $("status").textContent = txt;
   desenharGrafico(st.historico);

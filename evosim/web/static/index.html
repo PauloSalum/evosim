@@ -36,8 +36,10 @@
           <label>Algoritmo <select id="algoritmo"></select></label>
           <label>Cérebro <select id="controlador"></select></label>
         </div>
+        <label class="inline"><input type="checkbox" id="infinito" checked>
+          Sem limite — rodar até eu parar</label>
         <div class="dois">
-          <label>Gerações <input id="geracoes" type="number" value="30" min="1"></label>
+          <label>Gerações (se com limite) <input id="geracoes" type="number" value="50" min="1"></label>
           <label>População <input id="pop" type="number" value="24" min="2"></label>
         </div>
         <div class="dois">
@@ -46,6 +48,9 @@
         </div>
         <label>Núcleos de CPU <input id="workers" type="number" value="0" min="0">
           <small id="cpus-info"></small>
+        </label>
+        <label>Auto-salvar em (checkpoint a cada geração)
+          <input id="autosave" type="text" placeholder="runs/&lt;preset&gt;_auto.json">
         </label>
       </fieldset>
 
