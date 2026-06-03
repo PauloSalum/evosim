@@ -72,8 +72,34 @@ passo de tempo **fixo e determinístico**.
 
 ## 2. Instalação e início rápido
 
+### Modo fácil — menu interativo (recomendado)
+
+Sem decorar parâmetros: rode e escolha tudo por opções numeradas.
+
 ```bash
-# Núcleo (sem dependências). Opcional: pip install -r requirements.txt
+python -m evosim
+```
+
+```
+============================================================
+  EvoSim — Evolução de Locomoção Biológica em 3D
+============================================================
+
+O que você quer fazer?
+   1) Evoluir uma nova criatura  ◀ padrão
+   2) Assistir um save treinado
+   3) Corrida entre saves (sandbox)
+   4) Caça e Caçador (co-evolução)
+   5) Listar opções disponíveis
+   6) Sair
+```
+
+O menu guia preset, fitness, algoritmo, cérebro, gerações, etc. (Enter aceita o
+padrão), salva o resultado e oferece assistir o vencedor.
+
+### Modo avançado — linha de comando
+
+```bash
 python -m evosim.cli listar
 
 # Evolui um humanoide por 30 gerações para velocidade máxima e salva o melhor:

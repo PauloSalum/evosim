@@ -36,6 +36,11 @@ def _print_stats(ger: int, stats: dict) -> None:
               f"presa {stats['presa_melhor']:7.2f}")
 
 
+def cmd_menu(_args) -> None:
+    from .menu import executar
+    executar()
+
+
 def cmd_listar(_args) -> None:
     print("Presets:", ", ".join(listar_presets()))
     print("Fitness:", ", ".join(listar_fitness()))
@@ -108,9 +113,13 @@ def cmd_caca(args) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="evosim", description="Simulação evolutiva 3D.")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    p = argparse.ArgumentParser(
+        prog="evosim",
+        description="Simulação evolutiva 3D. Sem subcomando, abre o menu interativo.",
+    )
+    sub = p.add_subparsers(dest="cmd")
 
+    sub.add_parser("menu", help="Menu interativo (amigável)").set_defaults(func=cmd_menu)
     sub.add_parser("listar", help="Lista presets/fitness/algoritmos").set_defaults(func=cmd_listar)
 
     e = sub.add_parser("evoluir", help="Modo Evolução Isolada")
@@ -153,6 +162,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: List[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    if not hasattr(args, "func"):  # sem subcomando → menu interativo.
+        from .menu import executar
+        executar()
+        return
     args.func(args)
 
 
