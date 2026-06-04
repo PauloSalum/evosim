@@ -69,7 +69,7 @@ def cmd_evoluir(args) -> None:
         fitness=args.fitness, algoritmo=args.algoritmo,
         tipo_controlador=args.controlador, tamanho_pop=args.pop,
         seed=args.seed, callback=_print_stats, monitor=monitor,
-        n_workers=args.workers,
+        n_workers=args.workers, motor=args.motor,
     )
     if mon_obj is not None:
         mon_obj.fechar(manter_aberto=False)
@@ -106,7 +106,7 @@ def cmd_continuar(args) -> None:
         save, geracoes=args.geracoes, ambiente=ambiente, sim=sim,
         fitness=(args.fitness or None), algoritmo=args.algoritmo,
         tamanho_pop=args.pop, seed=args.seed, callback=_print_stats,
-        monitor=monitor, n_workers=args.workers,
+        monitor=monitor, n_workers=args.workers, motor=args.motor,
     )
     if mon_obj is not None:
         mon_obj.fechar(manter_aberto=False)
@@ -204,6 +204,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="intervalo de gerações para atualizar a janela 3D")
     e.add_argument("--workers", type=int, default=1,
                    help="núcleos de CPU para o treino (0 = todos; 1 = serial)")
+    e.add_argument("--motor", default="auto", choices=["auto", "pybullet", "interno"],
+                   help="motor de física (auto = pybullet se instalado)")
     e.set_defaults(func=cmd_evoluir)
 
     c = sub.add_parser("continuar",
@@ -225,6 +227,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--cada-ger", dest="cada_ger", type=int, default=1)
     c.add_argument("--workers", type=int, default=1,
                    help="núcleos de CPU (0 = todos; 1 = serial)")
+    c.add_argument("--motor", default="auto", choices=["auto", "pybullet", "interno"],
+                   help="motor de física (auto = pybullet se instalado)")
     c.set_defaults(func=cmd_continuar)
 
     a = sub.add_parser("assistir", help="Reproduz um save em ASCII")

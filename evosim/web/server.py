@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 from ..aptidao.funcoes import listar_fitness
 from ..criaturas.presets import listar_presets
+from ..fisica import pybullet_disponivel
 from ..persistencia.serializacao import carregar
 from . import sim_api
 from .manager import GerenciadorEvolucao
@@ -91,6 +92,7 @@ class Handler(BaseHTTPRequestHandler):
                 "controladores": ["cpg", "mlp"],
                 "saves": _saves_disponiveis(),
                 "cpus": os.cpu_count() or 1,
+                "pybullet": pybullet_disponivel(),
             })
         elif rota == "/api/status":
             self._json(_GER.status())

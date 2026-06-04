@@ -111,6 +111,9 @@ class MotorFisica(abc.ABC):
     def reset(self) -> None:
         """Remove todas as criaturas e zera o tempo."""
 
+    def fechar(self) -> None:
+        """Libera recursos do motor (ex.: conexão do PyBullet). No-op por padrão."""
+
     # Conveniência para renderização: snapshot de segmentos como linhas 3D.
     def coletar_segmentos_render(self) -> List["tuple[Vec3, Vec3, str]"]:
         return []

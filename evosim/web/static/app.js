@@ -33,6 +33,7 @@ function params() {
     fitness: $("fitness").value,
     algoritmo: $("algoritmo").value,
     controlador: $("controlador").value,
+    motor: $("motor").value,
     geracoes: $("infinito").checked ? 0 : +$("geracoes").value,  // 0 = sem limite
     autosave: $("autosave").value.trim(),
     pop: +$("pop").value,
@@ -65,6 +66,9 @@ async function init() {
     preencherSelect($("save"), saves.length ? saves : ["(nenhum save)"]);
     montarCompeticao(saves);
     $("cpus-info").textContent = `(0 = todos; você tem ${op.cpus})`;
+    $("motor-info").textContent = op.pybullet
+      ? "PyBullet detectado ✓"
+      : "PyBullet não instalado (pip install pybullet) — usando interno";
   } catch (e) {
     $("msg").textContent = "Falha ao carregar opções do servidor: " + e;
   }

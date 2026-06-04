@@ -17,6 +17,7 @@ class ResultadoEpisodio:
     oscilacao_lateral_media: float = 0.0
     terminou_cedo: bool = False
     motivo: str = ""
+    fracao_contato_indevido: float = 0.0   # tempo tocando o solo com não-pés
     # competição
     capturas: int = 0
     sobreviveu: bool = False

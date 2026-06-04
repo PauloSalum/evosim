@@ -12,7 +12,7 @@ from typing import List, Optional
 from ..config import ConfigAmbiente, ConfigSimulacao
 from ..criaturas.criatura import Criatura
 from ..criaturas.dna import CriaturaDNA
-from ..fisica.motor_interno import MotorInterno
+from ..fisica import criar_motor_factory
 from ..mathutils import Vec3
 from ..neural.controlador import ControladorNeural
 from ..persistencia.serializacao import Save
@@ -43,24 +43,28 @@ def simular_frames(
     cada: int = 2,
     segundos: Optional[float] = None,
     parar_cedo: bool = True,
+    motor_nome: str = "auto",
 ) -> List[Frame]:
-    motor = MotorInterno(ambiente)
+    motor = criar_motor_factory(motor_nome)(ambiente)
     motor.substeps = sim.substeps
     cri = Criatura(dna, motor.construir_criatura(dna, Vec3(0, 0, 0)))
     cri.controlador = controlador
     passos = sim.passos_totais if segundos is None else int(segundos / sim.dt)
     frames: List[Frame] = []
-    for p in range(passos):
-        cri.passo_controle(motor.tempo)
-        motor.passo(sim.dt)
-        if p % cada == 0:
-            frames.append([
-                [a.x, a.y, a.z, b.x, b.y, b.z]
-                for a, b, _ in motor.coletar_segmentos_render()
-            ])
-        # encerra a animação no mesmo ponto em que o treino encerraria.
-        if parar_cedo and _terminou(cri.corpo, sim, cri.corpo.centro_de_massa()):
-            break
+    try:
+        for p in range(passos):
+            cri.passo_controle(motor.tempo)
+            motor.passo(sim.dt)
+            if p % cada == 0:
+                frames.append([
+                    [a.x, a.y, a.z, b.x, b.y, b.z]
+                    for a, b, _ in motor.coletar_segmentos_render()
+                ])
+            # encerra a animação no mesmo ponto em que o treino encerraria.
+            if parar_cedo and _terminou(cri.corpo, sim, cri.corpo.centro_de_massa()):
+                break
+    finally:
+        motor.fechar()
     return frames
 
 
@@ -145,13 +149,15 @@ def frames_de_save(
     override_ambiente: Optional[dict] = None,
     segundos: float = 8.0,
     cada: int = 2,
+    motor_nome: str = "auto",
 ) -> dict:
     """Simula o melhor indivíduo de um save e devolve frames + metadados."""
     ambiente = ambiente_com_override(save.ambiente, override_ambiente)
     sim = ConfigSimulacao(duracao_segundos=segundos)
     dna = save.dna_obj()
     ctrl = save.melhor_genoma().instanciar_controlador()
-    frames = simular_frames(dna, ctrl, ambiente, sim, cada=cada, segundos=segundos)
+    frames = simular_frames(dna, ctrl, ambiente, sim, cada=cada, segundos=segundos,
+                            motor_nome=motor_nome)
     return {
         "preset": save.preset,
         "dt": sim.dt * cada,

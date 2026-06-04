@@ -57,21 +57,76 @@ def _quat_from_to(a: Vec3, b: Vec3):
     return [e.x * s, e.y * s, e.z * s, math.cos(ang / 2.0)]
 
 
+# Parâmetros do modelo muscular Hill-type (compartilhados).
+TAU_ATIVA = 0.012      # constante de tempo de ativação (s)
+TAU_DESATIVA = 0.050   # constante de tempo de desativação (s)
+V_MAX = 8.0            # velocidade angular de encurtamento máx. (rad/s)
+EXC_ECC = 1.4          # ganho excêntrico (alongando) máximo
+
+
+def _forca_velocidade(vc: float) -> float:
+    """Relação força-velocidade de Hill (vc = velocidade de encurtamento)."""
+    if vc <= 0.0:  # alongando (excêntrico): força sobe até EXC_ECC
+        return 1.0 + (EXC_ECC - 1.0) * min(1.0, -vc / V_MAX)
+    # encurtando (concêntrico): força cai a 0 em vc = V_MAX
+    return max(0.0, 1.0 - vc / V_MAX)
+
+
 class _Junta:
-    __slots__ = ("idx", "lo", "hi", "torque_max", "alvo_norm")
+    """Par muscular agonista/antagonista que aciona uma junta (Hill-type).
+
+    Em vez de um servo de posição, modelamos dois músculos que só PUXAM (um em
+    cada sentido). Cada um tem dinâmica de ativação e relações força-comprimento
+    e força-velocidade, como num músculo real. Isso dá amortecimento natural e
+    impede movimentos explosivos/em espiral.
+    """
+
+    __slots__ = ("idx", "lo", "hi", "torque_max", "exc", "a_pos", "a_neg",
+                 "meio", "largura")
 
     def __init__(self, idx, lo, hi, torque):
         self.idx = idx
         self.lo = lo
         self.hi = hi
         self.torque_max = torque
-        self.alvo_norm = 0.0
+        self.exc = 0.0          # excitação do controlador em [-1, 1]
+        self.a_pos = 0.0        # ativação do músculo no sentido +
+        self.a_neg = 0.0        # ativação do músculo no sentido -
+        self.meio = 0.0         # ângulo de repouso (força-comprimento ótima)
+        self.largura = max(0.3, 0.9 * 0.5 * (hi - lo))
+
+    def passo_ativacao(self, sdt: float) -> None:
+        u_pos = max(0.0, self.exc)
+        u_neg = max(0.0, -self.exc)
+        for atr, u in (("a_pos", u_pos), ("a_neg", u_neg)):
+            a = getattr(self, atr)
+            tau = TAU_ATIVA if u > a else TAU_DESATIVA
+            setattr(self, atr, a + (u - a) * min(1.0, sdt / tau))
+
+    def torque(self, ang: float, vel: float) -> float:
+        # força-comprimento: mais forte perto do repouso, fraca nos extremos.
+        d = (ang - self.meio) / self.largura
+        fl = math.exp(-d * d)
+        t_pos = self.a_pos * self.torque_max * fl * _forca_velocidade(vel)
+        t_neg = self.a_neg * self.torque_max * fl * _forca_velocidade(-vel)
+        liquido = t_pos - t_neg
+        # torque passivo (ligamentos) empurrando de volta para dentro do limite.
+        margem = 0.15
+        if ang > self.hi - margem:
+            liquido -= self.torque_max * 3.0 * (ang - (self.hi - margem))
+        elif ang < self.lo + margem:
+            liquido += self.torque_max * 3.0 * ((self.lo + margem) - ang)
+        return liquido
+
+    def esforco(self) -> float:
+        return self.a_pos * self.a_pos + self.a_neg * self.a_neg
 
 
 class CorpoPyBullet(CorpoCriatura):
     def __init__(self, motor: "MotorPyBullet", robot: int):
         self.motor = motor
         self.p = motor.p
+        self.cid = motor.cid
         self.robot = robot
         self.juntas: List[_Junta] = []
         self.massas: List[float] = []        # massa de base + cada elo
@@ -88,20 +143,22 @@ class CorpoPyBullet(CorpoCriatura):
         return len(self.juntas)
 
     def angulo_junta(self, i: int) -> float:
-        return self.p.getJointState(self.robot, self.juntas[i].idx)[0]
+        return self.p.getJointState(self.robot, self.juntas[i].idx,
+                                    physicsClientId=self.cid)[0]
 
     def limites_junta(self, i: int) -> Tuple[float, float]:
         j = self.juntas[i]
         return (j.lo, j.hi)
 
     def definir_ativacao(self, i: int, valor_norm: float) -> None:
-        self.juntas[i].alvo_norm = clamp(valor_norm, -1.0, 1.0)
+        # sinal do controlador vira excitação do par muscular (+ agonista, - antagonista).
+        self.juntas[i].exc = clamp(valor_norm, -1.0, 1.0)
 
     # --- estado -------------------------------------------------------
     def _pos_elo(self, idx: int) -> Vec3:
         if idx < 0:
-            return Vec3(*self.p.getBasePositionAndOrientation(self.robot)[0])
-        return Vec3(*self.p.getLinkState(self.robot, idx)[0])
+            return Vec3(*self.p.getBasePositionAndOrientation(self.robot, physicsClientId=self.cid)[0])
+        return Vec3(*self.p.getLinkState(self.robot, idx, physicsClientId=self.cid)[0])
 
     def centro_de_massa(self) -> Vec3:
         acc = Vec3(0, 0, 0)
@@ -110,19 +167,20 @@ class CorpoPyBullet(CorpoCriatura):
         return acc / self.massa_total if self.massa_total > EPS else Vec3()
 
     def pos_core(self) -> Vec3:
-        return Vec3(*self.p.getBasePositionAndOrientation(self.robot)[0])
+        return Vec3(*self.p.getBasePositionAndOrientation(self.robot, physicsClientId=self.cid)[0])
 
     def velocidade_cm(self) -> Vec3:
-        return Vec3(*self.p.getBaseVelocity(self.robot)[0])
+        return Vec3(*self.p.getBaseVelocity(self.robot, physicsClientId=self.cid)[0])
 
     def vetor_up_core(self) -> Vec3:
-        _, orn = self.p.getBasePositionAndOrientation(self.robot)
+        _, orn = self.p.getBasePositionAndOrientation(self.robot, physicsClientId=self.cid)
         return Vec3(*_rot(self.p, orn, self.up_local))
 
     # --- contatos -----------------------------------------------------
     def _toca(self, idx: int) -> bool:
         return len(self.p.getContactPoints(bodyA=self.robot, linkIndexA=idx,
-                                           bodyB=self.motor.solo)) > 0
+                                           bodyB=self.motor.solo,
+                                           physicsClientId=self.cid)) > 0
 
     def contatos_pe(self) -> List[bool]:
         return [self._toca(i) for i in self.pes]
@@ -131,8 +189,12 @@ class CorpoPyBullet(CorpoCriatura):
         return any(self._toca(i) for i in self.proibidos)
 
     def parte_nao_pe_no_solo(self) -> bool:
+        # uma única consulta: vê todos os pontos de contato com o solo e checa
+        # se algum é de um elo que não é pé (contact[3] = linkIndexA).
         pes = set(self.pes)
-        return any(self._toca(i) for i in self.todos_elos if i not in pes)
+        pts = self.p.getContactPoints(bodyA=self.robot, bodyB=self.motor.solo,
+                                      physicsClientId=self.cid)
+        return any(c[3] not in pes for c in pts)
 
     def energia_acumulada(self) -> float:
         return self._energia
@@ -145,31 +207,35 @@ class MotorPyBullet(MotorFisica):
         import pybullet_data
         self.p = p
         self.cid = p.connect(p.GUI if gui else p.DIRECT)
-        p.resetSimulation(physicsClientId=self.cid)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
-        g = ambiente.vetor_gravidade
-        p.setGravity(g.x, g.y, g.z)
-        p.setPhysicsEngineParameter(numSolverIterations=60,
-                                    deterministicOverlappingPairs=1)
+        self._configurar_mundo()
         self.solo = self._criar_solo()
         self.corpos: List[CorpoPyBullet] = []
         self.substeps = 4
+
+    def _configurar_mundo(self) -> None:
+        p, g = self.p, self.ambiente.vetor_gravidade
+        p.setGravity(g.x, g.y, g.z, physicsClientId=self.cid)
+        p.setPhysicsEngineParameter(numSolverIterations=60,
+                                    deterministicOverlappingPairs=1,
+                                    physicsClientId=self.cid)
 
     def _criar_solo(self) -> int:
         # Plano de chão com normal +Y (mundo Y-up, igual ao resto do sistema).
         # O plane.urdf padrão do PyBullet tem normal +Z (Z-up) e não serviria.
         p = self.p
-        col = p.createCollisionShape(p.GEOM_PLANE, planeNormal=[0, 1, 0])
-        solo = p.createMultiBody(0, col,
-                                 basePosition=[0, self.ambiente.altura_solo, 0])
+        col = p.createCollisionShape(p.GEOM_PLANE, planeNormal=[0, 1, 0],
+                                     physicsClientId=self.cid)
+        solo = p.createMultiBody(0, col, basePosition=[0, self.ambiente.altura_solo, 0],
+                                 physicsClientId=self.cid)
         p.changeDynamics(solo, -1, lateralFriction=self.ambiente.friccao_solo,
-                         restitution=self.ambiente.restituicao_solo)
+                         restitution=self.ambiente.restituicao_solo,
+                         physicsClientId=self.cid)
         return solo
 
     def reset(self) -> None:
-        self.p.resetSimulation()
-        g = self.ambiente.vetor_gravidade
-        self.p.setGravity(g.x, g.y, g.z)
+        self.p.resetSimulation(physicsClientId=self.cid)
+        self._configurar_mundo()
         self.solo = self._criar_solo()
         self.corpos.clear()
         self.tempo = 0.0
@@ -229,7 +295,7 @@ class MotorPyBullet(MotorFisica):
             col = p.createCollisionShape(
                 p.GEOM_CAPSULE, radius=r, height=seg.comprimento,
                 collisionFramePosition=[seg.comprimento * 0.5, 0, 0],
-                collisionFrameOrientation=q_zx)
+                collisionFrameOrientation=q_zx, physicsClientId=self.cid)
             return col
 
         # 4) monta os arrays do multibody.
@@ -274,11 +340,13 @@ class MotorPyBullet(MotorFisica):
             linkParentIndices=link_parent,
             linkJointTypes=link_jtype,
             linkJointAxis=link_jaxis,
+            physicsClientId=self.cid,
         )
 
         corpo = CorpoPyBullet(self, robot)
         p.changeDynamics(robot, -1, lateralFriction=self.ambiente.friccao_solo,
-                         restitution=self.ambiente.restituicao_solo)
+                         restitution=self.ambiente.restituicao_solo,
+                         physicsClientId=self.cid)
         # base = core; "para cima" do corpo no repouso (consistente entre presets).
         corpo.up_local = list(_rot(p, _qinv(p, qworld[raiz.id]), [0, 1, 0]))
         corpo.todos_elos = [-1] + list(range(len(ordem)))
@@ -297,7 +365,12 @@ class MotorPyBullet(MotorFisica):
                              jointLowerLimit=seg.junta.limite_min,
                              jointUpperLimit=seg.junta.limite_max,
                              linearDamping=self.ambiente.arrasto_fluido,
-                             angularDamping=self.ambiente.arrasto_fluido)
+                             angularDamping=self.ambiente.arrasto_fluido,
+                             physicsClientId=self.cid)
+            # desliga o motor padrão (atrito de harmônica) para podermos aplicar
+            # torque muscular puro via TORQUE_CONTROL.
+            p.setJointMotorControl2(robot, j, p.VELOCITY_CONTROL, force=0.0,
+                                    physicsClientId=self.cid)
             corpo.juntas.append(_Junta(j, seg.junta.limite_min,
                                        seg.junta.limite_max, seg.junta.torque_max))
             if seg.eh_pe:
@@ -311,18 +384,27 @@ class MotorPyBullet(MotorFisica):
     # ------------------------------------------------------------------
     def passo(self, dt: float) -> None:
         p = self.p
+        sdt = dt / self.substeps
+        # Atuador muscular: servo de ângulo-alvo com TORQUE LIMITADO (maxForce =
+        # torque do músculo). É fisicamente plausível (não injeta energia, como o
+        # antigo modelo cinemático fazia) e, ao contrário do torque puro, segura
+        # a postura — o que torna a locomoção evoluível. A dinâmica de ativação
+        # (suavização) entra como atraso no alvo; o esforço alimenta o fitness.
         for corpo in self.corpos:
             for j in corpo.juntas:
+                j.passo_ativacao(dt)
                 amp = 0.5 * (j.hi - j.lo)
-                alvo = clamp(j.alvo_norm * amp, j.lo, j.hi)
-                p.setJointMotorControl2(corpo.robot, j.idx, p.POSITION_CONTROL,
-                                        targetPosition=alvo, force=j.torque_max)
-        p.setTimeStep(dt / self.substeps)
+                alvo = clamp(j.exc * amp, j.lo, j.hi)
+                p.setJointMotorControl2(
+                    corpo.robot, j.idx, p.POSITION_CONTROL,
+                    targetPosition=alvo, force=j.torque_max,
+                    positionGain=0.5, physicsClientId=self.cid)
         for _ in range(self.substeps):
-            p.stepSimulation()
+            p.setTimeStep(sdt, physicsClientId=self.cid)
+            p.stepSimulation(physicsClientId=self.cid)
         for corpo in self.corpos:
             for j in corpo.juntas:
-                tau = p.getJointState(corpo.robot, j.idx)[3]
+                tau = p.getJointState(corpo.robot, j.idx, physicsClientId=self.cid)[3]
                 corpo._energia += abs(tau) * dt
         self.tempo += dt
 
@@ -333,9 +415,9 @@ class MotorPyBullet(MotorFisica):
         for corpo in self.corpos:
             for k, idx in enumerate(corpo.todos_elos):
                 if idx < 0:
-                    pos, orn = p.getBasePositionAndOrientation(corpo.robot)
+                    pos, orn = p.getBasePositionAndOrientation(corpo.robot, physicsClientId=self.cid)
                 else:
-                    st = p.getLinkState(corpo.robot, idx)
+                    st = p.getLinkState(corpo.robot, idx, physicsClientId=self.cid)
                     pos, orn = st[4], st[5]
                 comp = corpo.comprimentos[k]
                 a = Vec3(*pos)

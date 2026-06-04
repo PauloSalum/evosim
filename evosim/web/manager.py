@@ -52,6 +52,7 @@ class GerenciadorEvolucao:
         self.autosave_path = ""
         self.autosave_geracao = -1
         self.ilimitado = False
+        self.motor_nome = "auto"
 
     # ------------------------------------------------------------------
     def status(self) -> dict:
@@ -119,6 +120,7 @@ class GerenciadorEvolucao:
             fitness = params.get("fitness", "velocidade")
             controlador = params.get("controlador", "cpg")
             autosave_cada = max(1, int(params.get("autosave_cada", 1)))
+            motor_nome = params.get("motor", "auto")
             genoma_inicial = None
 
             if modo == "continuar":
@@ -142,12 +144,13 @@ class GerenciadorEvolucao:
                 self.autosave_cada = autosave_cada
                 self.autosave_geracao = -1
                 self.ilimitado = geracoes <= 0
+                self.motor_nome = motor_nome
 
             factory = criar_algoritmo(algoritmo, tamanho_pop=pop, seed=sim.seed)
             executor = Executor(
                 dna, ambiente, sim, factory, fitness_nome=fitness,
                 tipo_controlador=controlador, n_workers=workers,
-                genoma_inicial=genoma_inicial,
+                genoma_inicial=genoma_inicial, motor=motor_nome,
             )
             with self._lock:
                 self.executor = executor
@@ -190,6 +193,7 @@ class GerenciadorEvolucao:
             frames = sim_api.simular_frames(
                 executor.dna, melhor.instanciar_controlador(),
                 executor.ambiente, clip, cada=3, segundos=clip.duracao_segundos,
+                motor_nome=self.motor_nome,
             )
             with self._lock:
                 self.frames = {
@@ -213,6 +217,6 @@ class GerenciadorEvolucao:
         clip = ConfigSimulacao(duracao_segundos=segundos)
         frames = sim_api.simular_frames(
             ex.dna, ex.melhor_atual().instanciar_controlador(),
-            ambiente, clip, cada=2, segundos=segundos,
+            ambiente, clip, cada=2, segundos=segundos, motor_nome=self.motor_nome,
         )
         return {"frames": frames, "dt": clip.dt * 2, "preset": self.preset}

@@ -26,6 +26,7 @@ def rodar_evolucao_isolada(
     monitor: Optional[Callable] = None,
     n_workers: int = 1,
     genoma_inicial: Optional[Genoma] = None,
+    motor: str = "interno",
 ) -> Save:
     dna = criar_preset(especie) if isinstance(especie, str) else especie
     ambiente = ambiente or ConfigAmbiente()
@@ -34,7 +35,7 @@ def rodar_evolucao_isolada(
     executor = Executor(
         dna, ambiente, sim, factory,
         fitness_nome=fitness, tipo_controlador=tipo_controlador,
-        n_workers=n_workers, genoma_inicial=genoma_inicial,
+        n_workers=n_workers, genoma_inicial=genoma_inicial, motor=motor,
     )
     return executor.evoluir(geracoes, callback=callback, monitor=monitor)
 
@@ -51,6 +52,7 @@ def continuar_evolucao(
     callback: Optional[Callable[[int, dict], None]] = None,
     monitor: Optional[Callable] = None,
     n_workers: int = 1,
+    motor: str = "interno",
 ) -> Save:
     """Continua a evolução a partir de um save (warm-start).
 
@@ -67,5 +69,5 @@ def continuar_evolucao(
         dna, geracoes=geracoes, ambiente=ambiente, sim=sim,
         fitness=fitness or save.fitness_nome, algoritmo=algoritmo,
         tamanho_pop=tamanho_pop, seed=seed, callback=callback, monitor=monitor,
-        n_workers=n_workers, genoma_inicial=genoma,
+        n_workers=n_workers, genoma_inicial=genoma, motor=motor,
     )

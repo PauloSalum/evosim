@@ -17,6 +17,7 @@ from ..config import ConfigAmbiente, ConfigSimulacao
 from ..criaturas.dna import CriaturaDNA
 from ..evolucao.algoritmos import AlgoritmoEvolutivo
 from ..evolucao.genoma import Genoma
+from ..fisica import criar_motor_factory
 from ..mathutils import Vec3, mean
 from ..neural import criar_controlador
 from ..neural.controlador import ControladorNeural
@@ -36,13 +37,16 @@ class Executor:
         eixo: Vec3 = Vec3(1.0, 0.0, 0.0),
         n_workers: int = 1,
         genoma_inicial: Optional[Genoma] = None,
+        motor: str = "interno",
     ) -> None:
         self.dna = dna
         self.ambiente = ambiente
         self.sim = sim
         self.fitness_nome = fitness_nome
         self.fitness = obter_fitness(fitness_nome)
-        self.avaliador = Avaliador(ambiente, sim, eixo=eixo)
+        self.motor_nome = motor
+        self.avaliador = Avaliador(ambiente, sim, eixo=eixo,
+                                   motor_factory=criar_motor_factory(motor))
         if genoma_inicial is not None:
             # Continuar de um save: usa a MESMA arquitetura/pesos como protótipo
             # e semeia a busca ao redor desse indivíduo.
@@ -75,6 +79,7 @@ class Executor:
                     dataclasses.asdict(self.sim),
                     self.avaliador.eixo.as_tuple(),
                     self.fitness_nome,
+                    self.motor_nome,
                 ),
             )
         return self._pool
@@ -83,6 +88,7 @@ class Executor:
         if self._pool is not None:
             self._pool.shutdown()
             self._pool = None
+        self.avaliador.fechar()
 
     def avaliar_populacao(self, pop: List[Genoma]) -> None:
         pool = self._garantir_pool()

@@ -52,17 +52,20 @@ class ConfigSimulacao:
     # Duração máxima da avaliação de um indivíduo, em segundos simulados.
     duracao_segundos: float = 12.0
     # --- parada precoce (early termination) ---
-    altura_critica: float = 0.35        # CoM abaixo disso => caiu.
+    # A criatura "caiu" se o CoM cair abaixo do piso absoluto OU abaixo de uma
+    # fração da sua altura inicial (adapta-se a bichos altos e baixos).
+    altura_critica: float = 0.10        # piso absoluto do CoM.
+    fracao_altura_queda: float = 0.40   # ou abaixo de 40% da altura inicial.
     janela_aquecimento: float = 2.0     # tempo antes de checar deslocamento.
-    deslocamento_minimo: float = 0.25   # se não andar isso após aquecimento, aborta.
-    proibe_contato_cabeca: bool = True  # cabeça tocar o chão aborta.
-    # Só os pés podem tocar o solo: qualquer outra parte encostando aborta
-    # ("se jogar machuca"). Evita rastejar/usar o corpo como apoio.
+    deslocamento_minimo: float = 0.15   # se não andar isso após aquecimento, aborta.
+    # Capotou de fato (de cabeça para baixo): up.y abaixo disso encerra. Mantido
+    # permissivo (-0.3) porque inclinar para andar é normal; o ANDAR ereto é
+    # incentivado por PENALIDADE no fitness, não por morte instantânea.
+    up_minimo_capotar: float = -0.3
+    # "Se jogar machuca": tocar o solo com algo que não seja pé vira PENALIDADE
+    # no fitness (não mata o episódio — senão não há gradiente para aprender).
     apenas_pes_no_solo: bool = True
-    # Penaliza cambalhotas/capotamento: o "para cima" do tronco precisa ficar
-    # acima deste valor (1 = perfeitamente em pé, 0 = deitado de lado). Com 0.2
-    # a criatura pode inclinar até ~78°, mas dar uma cambalhota a mata.
-    up_minimo_capotar: float = 0.2
+    proibe_contato_cabeca: bool = True
     seed: int = 1234
 
     @property

@@ -36,6 +36,14 @@
           <label>Algoritmo <select id="algoritmo"></select></label>
           <label>Cérebro <select id="controlador"></select></label>
         </div>
+        <label>Motor de física
+          <select id="motor">
+            <option value="auto">Automático (PyBullet se disponível)</option>
+            <option value="pybullet">PyBullet — corpos rígidos (natural)</option>
+            <option value="interno">Interno — Python puro (sem dependências)</option>
+          </select>
+          <small id="motor-info"></small>
+        </label>
         <label class="inline"><input type="checkbox" id="infinito" checked>
           Sem limite — rodar até eu parar</label>
         <div class="dois">

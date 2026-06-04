@@ -36,17 +36,32 @@ class Avaliador:
         self.sim = sim
         self.eixo = eixo.normalized()
         self.motor_factory = motor_factory or motor_interno_factory
+        self._motor: Optional[MotorFisica] = None  # reaproveitado entre indivíduos
 
     # ------------------------------------------------------------------
     def novo_motor(self) -> MotorFisica:
         motor = self.motor_factory(self.ambiente)
-        # repassa o número de subpassos ao motor (interface informal).
         setattr(motor, "substeps", self.sim.substeps)
         return motor
 
+    def _motor_reutilizavel(self) -> MotorFisica:
+        # Reusa um único motor (reset por indivíduo) — crucial para o PyBullet
+        # não abrir/fechar uma conexão por avaliação.
+        if self._motor is None:
+            self._motor = self.novo_motor()
+        else:
+            self._motor.reset()
+            setattr(self._motor, "substeps", self.sim.substeps)
+        return self._motor
+
+    def fechar(self) -> None:
+        if self._motor is not None:
+            self._motor.fechar()
+            self._motor = None
+
     def dimensoes_controlador(self, dna: CriaturaDNA) -> tuple[int, int]:
         """(num_entradas, num_saidas) que um controlador para este DNA exige."""
-        motor = self.novo_motor()
+        motor = self._motor_reutilizavel()
         corpo = motor.construir_criatura(dna, Vec3(0.0, 0.0, 0.0))
         c = Criatura(dna, corpo)
         return c.num_entradas(), c.num_saidas()
@@ -72,7 +87,7 @@ class Avaliador:
         controlador: ControladorNeural,
         base: Vec3 = Vec3(0.0, 0.0, 0.0),
     ) -> ResultadoEpisodio:
-        motor = self.novo_motor()
+        motor = self._motor_reutilizavel()
         criatura = self.montar(motor, dna, controlador, base)
         return self._rodar(motor, criatura)
 
@@ -83,6 +98,9 @@ class Avaliador:
         res = ResultadoEpisodio()
         passos = sim.passos_totais
         energia_anterior = criatura.corpo.energia_acumulada()
+        y0 = max(0.05, pos0.y)
+        piso_queda = max(sim.altura_critica, sim.fracao_altura_queda * y0)
+        passos_contato = 0  # passos com parte indevida no solo (penalidade)
 
         for passo in range(passos):
             criatura.passo_controle(motor.tempo)
@@ -95,20 +113,16 @@ class Avaliador:
             cm = criatura.corpo.centro_de_massa()
             tempo = motor.tempo
 
-            # --- critérios de parada precoce ---
-            if cm.y < sim.altura_critica:
+            # --- penalidade (não mata): tocar o solo com algo que não é pé ---
+            if sim.apenas_pes_no_solo and criatura.corpo.parte_nao_pe_no_solo():
+                passos_contato += 1
+
+            # --- parada precoce: só quedas/capotamentos REAIS ---
+            if cm.y < piso_queda:
                 res.terminou_cedo, res.motivo = True, "caiu"
                 break
-            # capotou / deu cambalhota (tronco virado de cabeça para baixo).
             if criatura.corpo.vetor_up_core().y < sim.up_minimo_capotar:
                 res.terminou_cedo, res.motivo = True, "capotou"
-                break
-            # só os pés podem tocar o solo ("se jogar machuca").
-            if sim.apenas_pes_no_solo and criatura.corpo.parte_nao_pe_no_solo():
-                res.terminou_cedo, res.motivo = True, "contato_indevido"
-                break
-            if sim.proibe_contato_cabeca and criatura.corpo.parte_proibida_no_solo():
-                res.terminou_cedo, res.motivo = True, "cabeca_no_solo"
                 break
             if tempo >= sim.janela_aquecimento:
                 avanco = (cm - pos0).dot(self.eixo)
@@ -118,6 +132,7 @@ class Avaliador:
 
         cm_final = criatura.corpo.centro_de_massa()
         self._preencher(res, criatura, pos0, cm_final, motor.tempo)
+        res.fracao_contato_indevido = passos_contato / max(1, criatura.passos)
         return res
 
     def _preencher(

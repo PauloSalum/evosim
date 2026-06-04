@@ -16,6 +16,7 @@ from typing import Any, Dict, Tuple
 from ..aptidao.funcoes import obter_fitness
 from ..config import ConfigAmbiente, ConfigSimulacao
 from ..criaturas.dna import CriaturaDNA
+from ..fisica import criar_motor_factory
 from ..mathutils import Vec3
 from ..neural.controlador import from_dict as controlador_from_dict
 from .avaliador import Avaliador
@@ -30,11 +31,13 @@ def _init_worker(
     sim_dict: dict,
     eixo: Tuple[float, float, float],
     fitness_nome: str,
+    motor: str = "interno",
 ) -> None:
     ambiente = ConfigAmbiente(**ambiente_dict)
     sim = ConfigSimulacao(**sim_dict)
     _G["dna"] = CriaturaDNA.from_dict(dna_dict)
-    _G["av"] = Avaliador(ambiente, sim, eixo=Vec3(*eixo))
+    _G["av"] = Avaliador(ambiente, sim, eixo=Vec3(*eixo),
+                         motor_factory=criar_motor_factory(motor))
     _G["fit"] = obter_fitness(fitness_nome)
 
 
