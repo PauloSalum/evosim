@@ -26,9 +26,11 @@ def _perna(prefixo: str, pai: str, conecta: str, dir_coxa: Tuple[float, float, f
     coxa = SegmentoDNA(id=f"{prefixo}_coxa", papel="coxa", pai=pai, conecta_em=conecta,
                        direcao=list(dir_coxa), comprimento=comp[0], massa=massa[0],
                        junta=_j(lo=-1.3, hi=1.3, torque=torque))
+    # Joelho: dobra só para TRÁS (anatômico). Repouso ~0 (perna reta), flexiona
+    # no sentido negativo (a canela vai para trás), nunca para a frente.
     canela = SegmentoDNA(id=f"{prefixo}_canela", papel="canela", pai=coxa.id,
                          direcao=[0.0, -1.0, 0.0], comprimento=comp[1], massa=massa[1],
-                         junta=_j(lo=-0.05, hi=2.4, torque=torque))
+                         junta=_j(lo=-2.4, hi=0.05, torque=torque))
     pe = SegmentoDNA(id=f"{prefixo}_pe", papel="pe", pai=canela.id,
                      direcao=[0.8, -0.2, 0.0], comprimento=comp[2], massa=massa[2],
                      junta=_j(lo=-0.8, hi=0.8, torque=torque * 0.5))

@@ -65,6 +65,7 @@ class AlgoritmoGenetico(AlgoritmoEvolutivo):
         forca_mutacao: float = 0.25,
         torneio: int = 3,
         sigma_init: float = 0.5,
+        paciencia: int = 12,
     ) -> None:
         super().__init__(prototipo, tamanho_pop, seed)
         self.elite = elite
@@ -72,6 +73,9 @@ class AlgoritmoGenetico(AlgoritmoEvolutivo):
         self.forca_mutacao = forca_mutacao
         self.torneio = torneio
         self.sigma_init = sigma_init
+        self.paciencia = paciencia
+        self._melhor_hist = float("-inf")
+        self._estag = 0
 
     def inicializar(self) -> List[Genoma]:
         pop: List[Genoma] = []
@@ -106,15 +110,35 @@ class AlgoritmoGenetico(AlgoritmoEvolutivo):
         self._registrar_melhor(pop)
         ordenada = sorted(pop, key=lambda g: g.fitness, reverse=True)
         self.geracao += 1
+
+        # anti-platô: se o melhor não melhora há 'paciencia' gerações, injeta
+        # IMIGRANTES aleatórios (diversidade nova) e aumenta a mutação.
+        melhor_atual = ordenada[0].fitness
+        if melhor_atual > self._melhor_hist + 1e-4:
+            self._melhor_hist = melhor_atual
+            self._estag = 0
+        else:
+            self._estag += 1
+        forca = self.forca_mutacao * (3.0 if self._estag >= self.paciencia else 1.0)
+        n_imigrantes = (self.tamanho_pop // 5) if self._estag >= self.paciencia else 0
+        if self._estag >= self.paciencia:
+            self._estag = 0
+
         nova: List[Genoma] = [g.clone() for g in ordenada[: self.elite]]
         for g in nova:
             g.geracao = self.geracao
+        for _ in range(n_imigrantes):  # sangue novo para escapar do ótimo local
+            vetor = [self.rng.gauss(0.0, self.sigma_init) for _ in range(self.n)]
+            nova.append(Genoma.de_vetor(self.template, vetor, self.geracao))
         while len(nova) < self.tamanho_pop:
             pai = self._selecionar(ordenada)
             mae = self._selecionar(ordenada)
-            filho_vec = self._mutar(self._crossover(pai, mae))
+            filho_vec = self._crossover(pai, mae)
+            for i in range(len(filho_vec)):
+                if self.rng.random() < self.taxa_mutacao:
+                    filho_vec[i] += self.rng.gauss(0.0, forca)
             nova.append(Genoma.de_vetor(self.template, filho_vec, self.geracao))
-        return nova
+        return nova[: self.tamanho_pop]
 
 
 # ---------------------------------------------------------------------------
@@ -126,11 +150,19 @@ class EstrategiaEvolutiva(AlgoritmoEvolutivo):
         prototipo: ControladorNeural,
         tamanho_pop: int = 32,
         seed: int = 1234,
-        sigma: float = 0.3,
+        sigma: float = 0.4,
         mu: int | None = None,
+        sigma_min: float = 0.05,
+        sigma_max: float = 0.9,
+        paciencia: int = 12,
     ) -> None:
         super().__init__(prototipo, tamanho_pop, seed)
         self.sigma = sigma
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
+        self.paciencia = paciencia       # gerações sem melhora antes de reiniciar
+        self._melhor_hist = float("-inf")
+        self._estag = 0
         self.mu = mu or max(2, tamanho_pop // 4)
         self.media = [0.0] * self.n
         # pesos de recombinação logarítmicos (estilo CMA-ES).
@@ -160,13 +192,31 @@ class EstrategiaEvolutiva(AlgoritmoEvolutivo):
             pv = g.pesos
             for i in range(self.n):
                 nova_media[i] += peso * pv[i]
-        # adaptação simples de sigma pela dispersão dos elites em relação à média.
+        # dispersão dos elites (medida do passo natural da busca).
         desvio = 0.0
         for g in elites:
             pv = g.pesos
             desvio += sum((pv[i] - nova_media[i]) ** 2 for i in range(self.n))
         desvio = math.sqrt(desvio / (self.mu * self.n)) if self.n else self.sigma
-        self.sigma = max(1e-3, 0.5 * self.sigma + 0.5 * desvio)
+
+        # --- controle de passo ANTI-PLATÔ ---
+        # O sigma NÃO pode colapsar para ~0 (era o que estagnava tudo): mantemos
+        # um piso e um teto. Além disso, se o melhor histórico não melhora por
+        # 'paciencia' gerações, REINICIAMOS a exploração (aumentamos sigma) para
+        # escapar do ótimo local — em vez de ficar preso no mesmo padrão.
+        melhor_atual = max(g.fitness for g in pop)
+        if melhor_atual > self._melhor_hist + 1e-4:
+            self._melhor_hist = melhor_atual
+            self._estag = 0
+        else:
+            self._estag += 1
+
+        self.sigma = min(self.sigma_max,
+                         max(self.sigma_min, 0.6 * self.sigma + 0.5 * desvio))
+        if self._estag >= self.paciencia:        # platô -> reinicia a busca
+            self.sigma = min(self.sigma_max, self.sigma * 3.0 + 0.15)
+            self._estag = 0
+
         self.media = nova_media
         self.geracao += 1
         return [Genoma.de_vetor(self.template, self._amostrar(), self.geracao)
