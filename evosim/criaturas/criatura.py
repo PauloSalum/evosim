@@ -27,7 +27,7 @@ class Criatura:
         self,
         dna: CriaturaDNA,
         corpo: "CorpoCriatura",
-        suavizacao_muscular: float = 0.18,
+        suavizacao_muscular: float = 0.10,
     ) -> None:
         self.dna = dna
         self.corpo = corpo

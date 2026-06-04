@@ -10,6 +10,7 @@ Exemplos:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from typing import List
 
@@ -45,6 +46,34 @@ def cmd_web(args) -> None:
     from .web import iniciar_servidor
     iniciar_servidor(host=args.host, port=args.port,
                      abrir_navegador=not args.sem_navegador)
+
+
+def cmd_scone(args) -> None:
+    from . import scone
+    if args.listar or not scone.disponivel():
+        print("Ambientes SCONE (sconegym):")
+        for a in scone.AMBIENTES:
+            print("  -", a)
+        if not scone.disponivel():
+            print("\n⚠ sconegym/SCONE não instalados nesta máquina.")
+            print("  1) Instale o SCONE: https://scone.software (com Hyfydy ou OpenSim)")
+            print("  2) git clone https://github.com/tgeijten/sconegym")
+            print("     cd sconegym && pip install -r requirements.txt && pip install -e .")
+        return
+    print(f"Treinando política (CMA-ES) no ambiente {args.env} — "
+          f"{args.geracoes} gerações × {args.pop}")
+    res = scone.treinar(
+        env_id=args.env, geracoes=args.geracoes, tamanho_pop=args.pop,
+        ocultas=args.ocultas, seed=args.seed,
+        callback=lambda g, s: print(f"  ger {g:4d} | melhor {s['melhor']:9.2f} | "
+                                    f"média {s['media']:9.2f}"),
+    )
+    if args.saida:
+        os.makedirs(os.path.dirname(args.saida) or ".", exist_ok=True)
+        with open(args.saida, "w", encoding="utf-8") as fh:
+            json.dump(res, fh, indent=2, ensure_ascii=False)
+        print(f"Política salva em {args.saida}. O melhor episódio foi gravado "
+              f"em formato SCONE (.sto) — abra no SCONE Studio para assistir.")
 
 
 def cmd_listar(_args) -> None:
@@ -185,6 +214,17 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--sem-navegador", dest="sem_navegador", action="store_true",
                    help="não abrir o navegador automaticamente")
     w.set_defaults(func=cmd_web)
+
+    sc = sub.add_parser("scone",
+                        help="Treina no sconegym (músculos Hill reais, estilo SCONE)")
+    sc.add_argument("--env", default="sconewalk_h0918-v1")
+    sc.add_argument("--geracoes", type=int, default=200)
+    sc.add_argument("--pop", type=int, default=16)
+    sc.add_argument("--ocultas", type=int, nargs="*", default=[64, 64])
+    sc.add_argument("--seed", type=int, default=1234)
+    sc.add_argument("--saida", default="")
+    sc.add_argument("--listar", action="store_true", help="lista os ambientes e sai")
+    sc.set_defaults(func=cmd_scone)
 
     e = sub.add_parser("evoluir", help="Modo Evolução Isolada")
     e.add_argument("--preset", required=True, choices=listar_presets())

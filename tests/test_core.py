@@ -266,5 +266,15 @@ class TestWeb(unittest.TestCase):
         self.assertGreater(len(pb["frames"]), 0)
 
 
+class TestScone(unittest.TestCase):
+    def test_modulo(self):
+        from evosim import scone
+        self.assertGreater(len(scone.AMBIENTES), 0)
+        self.assertIsInstance(scone.disponivel(), bool)
+        if not scone.disponivel():
+            with self.assertRaises(RuntimeError):
+                scone.treinar(geracoes=1, tamanho_pop=2)
+
+
 if __name__ == "__main__":
     unittest.main()

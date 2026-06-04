@@ -58,8 +58,9 @@ canvas {
   display: block; width: 100%; background: #0d1117;
   border: 1px solid #30363d; border-radius: 8px;
 }
-#grafico { margin-top: 10px; height: 120px; }
-#viewer { cursor: grab; }
+#grafico { margin-top: 8px; height: 100px; }
+/* viewer ocupa a altura disponível para caber junto com o gráfico, sem scroll */
+#viewer { cursor: grab; height: calc(100vh - 300px); min-height: 240px; }
 #viewer:active { cursor: grabbing; }
 
 .lista-saves {

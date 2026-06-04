@@ -189,10 +189,11 @@ class GerenciadorEvolucao:
         # gera os frames do campeão desta geração (clip curto p/ visualização).
         melhor = executor.melhor_atual()
         if melhor is not None:
-            clip = ConfigSimulacao(duracao_segundos=min(executor.sim.duracao_segundos, 6.0))
+            # episódio COMPLETO (a duração do treino), não um clipe cortado.
+            clip = ConfigSimulacao(duracao_segundos=executor.sim.duracao_segundos)
             frames = sim_api.simular_frames(
                 executor.dna, melhor.instanciar_controlador(),
-                executor.ambiente, clip, cada=3, segundos=clip.duracao_segundos,
+                executor.ambiente, clip, cada=2, segundos=clip.duracao_segundos,
                 motor_nome=self.motor_nome,
             )
             with self._lock:

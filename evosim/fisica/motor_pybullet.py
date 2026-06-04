@@ -366,6 +366,7 @@ class MotorPyBullet(MotorFisica):
                              jointUpperLimit=seg.junta.limite_max,
                              linearDamping=self.ambiente.arrasto_fluido,
                              angularDamping=self.ambiente.arrasto_fluido,
+                             jointDamping=0.3,  # amortece a junta -> menos vibração
                              physicsClientId=self.cid)
             # desliga o motor padrão (atrito de harmônica) para podermos aplicar
             # torque muscular puro via TORQUE_CONTROL.
@@ -398,7 +399,8 @@ class MotorPyBullet(MotorFisica):
                 p.setJointMotorControl2(
                     corpo.robot, j.idx, p.POSITION_CONTROL,
                     targetPosition=alvo, force=j.torque_max,
-                    positionGain=0.5, physicsClientId=self.cid)
+                    positionGain=0.18, velocityGain=1.0,  # servo macio = sem tremor
+                    physicsClientId=self.cid)
         for _ in range(self.substeps):
             p.setTimeStep(sdt, physicsClientId=self.cid)
             p.stepSimulation(physicsClientId=self.cid)

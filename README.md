@@ -177,6 +177,23 @@ dos limites do preset). Gravidade, arrasto e solo **nunca** mudam.
 
 ---
 
+### Integração com o SCONE (músculos Hill reais)
+
+Para chegar perto dos resultados do Geijtenbeek/SCONE (modelos musculoesqueléticos
+com músculos Hill-type roteados), há a integração com o **sconegym**, onde a
+nossa evolução (CMA-ES + política MLP) otimiza o reward já no estilo SCONE:
+
+```bash
+python -m evosim.cli scone --listar     # lista os ambientes (e instruções)
+
+# Requer SCONE instalado (https://scone.software, com Hyfydy ou OpenSim) e o
+# sconegym (github.com/tgeijten/sconegym). Depois:
+python -m evosim.cli scone --env sconewalk_h0918-v1 --geracoes 300 --pop 16 \
+    --saida runs/scone_h0918.json
+```
+O melhor episódio é gravado em formato SCONE (`.sto`) para assistir no SCONE
+Studio (com os músculos coloridos). Ver `evosim/scone.py`.
+
 ## 4. Modos de simulação
 
 ```bash

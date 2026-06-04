@@ -11,8 +11,8 @@ const postJSON = (u, b) =>
 // ---------------------------------------------------------------- estado
 const S = {
   frames: [], dt: 0.05, idx: 0, acc: 0,
-  geracaoMostrada: -1, aoVivo: true, rodando: false,
-  cam: { yaw: 0.6, pitch: 0.35, dist: 6, target: [0, 0.8, 0] },
+  geracaoMostrada: -1, aoVivo: true, rodando: false, buscandoFrames: false,
+  cam: { yaw: 0.6, pitch: 0.28, dist: 5, zoom: 1.0, target: [0, 0.8, 0] },
 };
 
 // --------------------------------------------------------------- helpers
@@ -104,6 +104,7 @@ async function init() {
   liga("friccao", "fr-val", (v) => v.toFixed(2));
   liga("arrasto", "ar-val", (v) => v.toFixed(2));
 
+  ajustarCanvas();
   configurarMouse();
   setInterval(loopStatus, 1000);
   setInterval(loopFrames, 600);
@@ -211,12 +212,24 @@ async function loopStatus() {
 }
 
 async function loopFrames() {
-  if (!S.aoVivo || !S.rodando) return;
-  const f = await getJSON("/api/frames");
-  if (f.frames && f.frames.length && f.geracao !== S.geracaoMostrada) {
-    S.geracaoMostrada = f.geracao;
-    carregarFrames(f);
-  }
+  // só dá o "pontapé inicial": carrega algo assim que o treino começa. As
+  // atualizações seguintes acontecem ao FIM de cada clipe (atualizarAoVivo),
+  // pegando sempre o campeão mais recente.
+  if (!S.aoVivo || !S.rodando || S.frames.length) return;
+  await atualizarAoVivo();
+}
+
+async function atualizarAoVivo() {
+  if (S.buscandoFrames) return;
+  S.buscandoFrames = true;
+  try {
+    const f = await getJSON("/api/frames");
+    if (f.frames && f.frames.length) {
+      S.geracaoMostrada = f.geracao;
+      carregarFrames(f);
+    }
+  } catch (e) { /* ignora falha de rede pontual */ }
+  finally { S.buscandoFrames = false; }
 }
 
 function carregarFrames(f) {
@@ -225,6 +238,16 @@ function carregarFrames(f) {
 
 // ------------------------------------------------------ render 3D (orbit)
 const cv = $("viewer"), cx = cv.getContext("2d");
+
+function ajustarCanvas() {
+  // o tamanho exibido vem do CSS (altura limitada à viewport); aqui só casamos
+  // o buffer de desenho com o tamanho real, para ficar nítido e sem distorcer.
+  const r = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.max(320, Math.round(r.width * dpr));
+  cv.height = Math.max(240, Math.round(r.height * dpr));
+}
+window.addEventListener("resize", ajustarCanvas);
 
 function projetar(p) {
   const c = S.cam, t = c.target;
@@ -235,7 +258,7 @@ function projetar(p) {
   let y2 = y1 * cp - z1 * sp, z2 = y1 * sp + z1 * cp, x2 = x1;
   const zc = z2 + c.dist;
   if (zc < 0.15) return null;
-  const f = 430;
+  const f = 0.62 * cv.height;  // foco proporcional ao tamanho do canvas
   return [cv.width / 2 + f * x2 / zc, cv.height / 2 - f * y2 / zc, zc];
 }
 
@@ -243,44 +266,69 @@ function linha(a, b, cor, w) {
   const pa = projetar(a), pb = projetar(b);
   if (!pa || !pb) return;
   cx.strokeStyle = cor; cx.lineWidth = w || 1;
+  cx.lineCap = "round";
   cx.beginPath(); cx.moveTo(pa[0], pa[1]); cx.lineTo(pb[0], pb[1]); cx.stroke();
 }
 
+function ponto(p, cor, raio) {
+  const pp = projetar(p);
+  if (!pp) return;
+  cx.fillStyle = cor;
+  cx.beginPath(); cx.arc(pp[0], pp[1], raio, 0, 7); cx.fill();
+}
+
 function desenharGrade(cxc, czc) {
-  const r = 4;
+  const r = 5;
   for (let i = -r; i <= r; i++) {
-    linha([cxc - r, 0, i + czc], [cxc + r, 0, i + czc], "#1d2630", 1);
-    linha([cxc + i, 0, czc - r], [cxc + i, 0, czc + r], "#1d2630", 1);
+    linha([cxc - r, 0, i + czc], [cxc + r, 0, i + czc], "#1b232d", 1);
+    linha([cxc + i, 0, czc - r], [cxc + i, 0, czc + r], "#1b232d", 1);
   }
 }
 
 function loopRender(now) {
   if (!loopRender.last) loopRender.last = now;
   const dt = (now - loopRender.last) / 1000; loopRender.last = now;
-  // avança frames pelo tempo real
   if (S.frames.length) {
     S.acc += dt;
-    while (S.acc >= S.dt) { S.idx = (S.idx + 1) % S.frames.length; S.acc -= S.dt; }
+    while (S.acc >= S.dt) {
+      S.idx++;
+      if (S.idx >= S.frames.length) {        // terminou o clipe
+        S.idx = 0;
+        if (S.aoVivo && S.rodando) atualizarAoVivo();  // pega o campeão mais recente
+      }
+      S.acc -= S.dt;
+    }
   }
   cx.clearRect(0, 0, cv.width, cv.height);
   const frame = S.frames[S.idx];
   if (frame && frame.length) {
-    // câmera segue o centro da criatura no eixo de avanço.
-    let mx = 0, mz = 0, n = 0;
-    frame.forEach((s) => { mx += s[0] + s[3]; mz += s[2] + s[5]; n += 2; });
-    if (n) { S.cam.target[0] += ((mx / n) - S.cam.target[0]) * 0.1;
-             S.cam.target[2] += ((mz / n) - S.cam.target[2]) * 0.1; }
+    // centro e raio da criatura -> câmera segue e enquadra automaticamente.
+    let mx = 0, my = 0, mz = 0, n = 0;
+    frame.forEach((s) => { mx += s[0] + s[3]; my += s[1] + s[4]; mz += s[2] + s[5]; n += 2; });
+    const tgt = [mx / n, my / n, mz / n];
+    let rad = 0.3;
+    frame.forEach((s) => {
+      rad = Math.max(rad, Math.hypot(s[0] - tgt[0], s[1] - tgt[1], s[2] - tgt[2]),
+                          Math.hypot(s[3] - tgt[0], s[4] - tgt[1], s[5] - tgt[2]));
+    });
+    for (let k = 0; k < 3; k++) S.cam.target[k] += (tgt[k] - S.cam.target[k]) * 0.12;
+    const distAlvo = Math.max(2.0, rad * 3.6) / S.cam.zoom;
+    S.cam.dist += (distAlvo - S.cam.dist) * 0.12;
+
     desenharGrade(S.cam.target[0], S.cam.target[2]);
+    const multi = frame[0].length > 6;
+    const lw = Math.max(7, cv.height * 0.022);   // membros grossos (cápsulas)
     frame.forEach((s) => {
       const a = [s[0], s[1], s[2]], b = [s[3], s[4], s[5]];
-      let cor;
-      if (s.length > 6) cor = PALETA[s[6] % PALETA.length];       // grupo (corrida/caça)
-      else cor = (Math.min(s[1], s[4]) < 0.12) ? "#f0883e" : "#58a6ff";
-      linha(a, b, cor, 3);
+      const cor = multi ? PALETA[s[6] % PALETA.length]
+                        : (Math.min(s[1], s[4]) < 0.14 ? "#f0883e" : "#58a6ff");
+      linha(a, b, cor, lw);
+      ponto(a, "#0d1117", lw * 0.5);            // junta: miolo escuro
+      ponto(b, "#cdd9e5", lw * 0.42);           // articulação clara
     });
   } else {
-    cx.fillStyle = "#8b949e"; cx.font = "14px system-ui";
-    cx.fillText("Inicie um treino ou ajuste a gravidade para ver o 3D.", 24, 30);
+    cx.fillStyle = "#8b949e"; cx.font = "15px system-ui";
+    cx.fillText("Inicie um treino (ou mexa na gravidade) para ver o 3D.", 24, 34);
   }
   requestAnimationFrame(loopRender);
 }
@@ -298,7 +346,8 @@ function configurarMouse() {
   });
   cv.addEventListener("wheel", (e) => {
     e.preventDefault();
-    S.cam.dist = Math.max(2, Math.min(20, S.cam.dist + e.deltaY * 0.01));
+    // zoom relativo ao enquadramento automático.
+    S.cam.zoom = Math.max(0.25, Math.min(5, S.cam.zoom * (1 - e.deltaY * 0.0012)));
   }, { passive: false });
 }
 
