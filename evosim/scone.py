@@ -99,6 +99,15 @@ def avaliar_politica(env, controlador, max_passos: int = 2000,
 # ---------------------------------------------------------------------------
 # Treino: CMA-ES otimizando os pesos da MLP sobre o reward do SCONE.
 # ---------------------------------------------------------------------------
+def _carregar_spec(origem) -> dict:
+    """Aceita um dict (já carregado) ou um caminho para o JSON da política."""
+    if isinstance(origem, dict):
+        return origem
+    import json
+    with open(origem, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 def treinar(
     env_id: str = "sconewalk_h0918-v1",
     geracoes: int = 200,
@@ -107,42 +116,61 @@ def treinar(
     seed: int = 1234,
     callback: Optional[Callable[[int, dict], None]] = None,
     gravar_episodio: bool = True,
+    continuar_de=None,
+    max_passos: int = 2000,
 ) -> dict:
     if not disponivel():
         raise RuntimeError(
-            "sconegym/SCONE não instalados. Veja as instruções no topo de "
+            "sconegym/SCONE não instalados. Veja docs/SCONE.md e o topo de "
             "evosim/scone.py (https://scone.software e github.com/tgeijten/sconegym)."
         )
+    from .neural.controlador import from_dict
     env = _make(env_id)
     n_obs = int(env.observation_space.shape[0])
     n_act = int(env.action_space.shape[0])
-    proto = RedeNeuralMLP(n_obs, n_act, ocultas=ocultas or [64, 64], seed=seed)
+
+    # protótipo: do zero, ou continuando de uma política salva (warm-start).
+    semente = None
+    if continuar_de is not None:
+        spec = _carregar_spec(continuar_de)
+        proto = from_dict(spec["controlador"])
+        if proto.num_entradas != n_obs or proto.num_saidas != n_act:
+            raise RuntimeError(
+                f"Política salva ({proto.num_entradas}->{proto.num_saidas}) não "
+                f"casa com o ambiente {env_id} ({n_obs}->{n_act}).")
+        semente = proto.get_pesos()
+    else:
+        proto = RedeNeuralMLP(n_obs, n_act, ocultas=ocultas or [64, 64], seed=seed)
+
     algo = EstrategiaEvolutiva(proto, tamanho_pop=tamanho_pop, seed=seed)
+    if semente is not None:
+        algo.semear(semente)
 
     historico: List[dict] = []
     pop = algo.inicializar()
     for ger in range(geracoes):
         for g in pop:
-            g.fitness = avaliar_politica(env, g.instanciar_controlador(), seed=seed + ger)
+            g.fitness = avaliar_politica(env, g.instanciar_controlador(),
+                                         max_passos=max_passos, seed=seed + ger)
         fits = [g.fitness for g in pop]
         stats = {"geracao": ger, "melhor": max(fits), "media": mean(fits)}
         historico.append(stats)
         if callback:
             callback(ger, stats)
-        algo._registrar_melhor(pop)
         pop = algo.proxima_geracao(pop)
 
     algo._registrar_melhor(pop)
     melhor = algo.melhor
 
-    # grava o melhor episódio no formato SCONE (.sto) para o SCONE Studio.
+    # grava o melhor episódio no formato SCONE (.sto/.par) para o SCONE Studio.
     if gravar_episodio and melhor is not None:
         try:
             env.store_next_episode()
-            avaliar_politica(env, melhor.instanciar_controlador(), seed=seed)
+            avaliar_politica(env, melhor.instanciar_controlador(),
+                             max_passos=max_passos, seed=seed)
             env.write_now()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"   (aviso: não consegui gravar o episódio SCONE: {e})")
 
     return {
         "env": env_id,
@@ -151,6 +179,24 @@ def treinar(
         "controlador": melhor.controlador_spec if melhor else proto.to_dict(),
         "fitness": melhor.fitness if melhor else float("-inf"),
     }
+
+
+def reproduzir(origem, env_id: Optional[str] = None, seed: int = 1234,
+               max_passos: int = 2000) -> float:
+    """Carrega uma política salva e grava UM episódio SCONE para assistir no
+    SCONE Studio. Devolve o reward total."""
+    if not disponivel():
+        raise RuntimeError("sconegym/SCONE não instalados (ver docs/SCONE.md).")
+    spec = _carregar_spec(origem)
+    env = _make(env_id or spec.get("env", "sconewalk_h0918-v1"))
+    ctrl = carregar_politica(spec)
+    try:
+        env.store_next_episode()
+        total = avaliar_politica(env, ctrl, max_passos=max_passos, seed=seed)
+        env.write_now()
+        return total
+    finally:
+        pass
 
 
 def carregar_politica(spec: dict) -> RedeNeuralMLP:

@@ -50,21 +50,26 @@ def cmd_web(args) -> None:
 
 def cmd_scone(args) -> None:
     from . import scone
-    if args.listar or not scone.disponivel():
+    if args.listar or (not scone.disponivel() and not args.reproduzir):
         print("Ambientes SCONE (sconegym):")
         for a in scone.AMBIENTES:
             print("  -", a)
         if not scone.disponivel():
-            print("\n⚠ sconegym/SCONE não instalados nesta máquina.")
+            print("\n⚠ sconegym/SCONE não instalados nesta máquina. Veja docs/SCONE.md")
             print("  1) Instale o SCONE: https://scone.software (com Hyfydy ou OpenSim)")
             print("  2) git clone https://github.com/tgeijten/sconegym")
             print("     cd sconegym && pip install -r requirements.txt && pip install -e .")
         return
-    print(f"Treinando política (CMA-ES) no ambiente {args.env} — "
-          f"{args.geracoes} gerações × {args.pop}")
+    if args.reproduzir:
+        r = scone.reproduzir(args.reproduzir, env_id=(args.env or None), seed=args.seed)
+        print(f"Episódio gravado (reward={r:.2f}). Abra no SCONE Studio para assistir.")
+        return
+    modo = f"continuando de {args.continuar}" if args.continuar else "do zero"
+    print(f"Treinando política (CMA-ES) no {args.env} — {args.geracoes} gerações "
+          f"× {args.pop} ({modo})")
     res = scone.treinar(
         env_id=args.env, geracoes=args.geracoes, tamanho_pop=args.pop,
-        ocultas=args.ocultas, seed=args.seed,
+        ocultas=args.ocultas, seed=args.seed, continuar_de=args.continuar,
         callback=lambda g, s: print(f"  ger {g:4d} | melhor {s['melhor']:9.2f} | "
                                     f"média {s['media']:9.2f}"),
     )
@@ -223,6 +228,9 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--ocultas", type=int, nargs="*", default=[64, 64])
     sc.add_argument("--seed", type=int, default=1234)
     sc.add_argument("--saida", default="")
+    sc.add_argument("--continuar", default="", help="política .json para warm-start")
+    sc.add_argument("--reproduzir", default="",
+                    help="grava um episódio SCONE de uma política salva (para assistir)")
     sc.add_argument("--listar", action="store_true", help="lista os ambientes e sai")
     sc.set_defaults(func=cmd_scone)
 
